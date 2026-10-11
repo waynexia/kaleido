@@ -2,7 +2,7 @@
 
 ## 模块边界
 
-`KaleidoCore` 不依赖 AppKit，负责窗口描述、内存 MRU 排序、切换会话、快捷键状态机和尺寸约束。XCTest 覆盖边界行为。
+`KaleidoCore` 不依赖 AppKit，负责窗口描述、内存 MRU 排序、切换会话、快捷键状态机、尺寸约束与权限检查生命周期。`PermissionMonitor` 接收权限查询和定时调度闭包，可在不修改系统权限的条件下测试授权前后的状态变化。XCTest 覆盖边界行为。
 
 `Package.swift` 要求 Swift 6 工具链，当前使用 Swift 5 语言模式；尚未迁移到 Swift 6 严格并发模式。
 
@@ -19,6 +19,10 @@
 ## 权限和进程
 
 仅需要辅助功能授权，不需要屏幕录制；不使用 AppleScript、截图、网络服务或私有窗口操作接口。窗口标题和 MRU 只驻留内存，诊断输出不包含标题。开发预览使用内置样本数据。
+
+启动时由 `PermissionMonitor` 查询一次辅助功能权限。缺少权限时自动展示设置中的说明和系统设置入口，主 RunLoop 以 1.5 秒间隔等待授权；返回应用时可提前确认。授权成功后销毁定时器、隐藏入口并启动快捷键监听，不保留“重新检查”按钮。权限结果只保存在本次进程内存中，窗口仓库和启动协调器不再重复查询；下次启动重新检查。运行期间撤销权限不通过轮询探测，需要重新启动以更新权限状态。
+
+AltTab 冲突通过 NSWorkspace 的应用启动、退出通知更新，不依赖权限定时器。打开设置、应用重新激活、切换快捷键或暂停状态时，使用已确认的权限结果更新运行状态并按需尝试启动监听。窗口列表自身的刷新定时器与授权检查相互独立。
 
 快捷键方案保存在 Kaleido 自身偏好中。标准方案在 AltTab 运行时保持待命；共存方案使用 Control + Option + K / J，两者可同时工作。`--coexist` 可选中并保存共存方案。不会修改 AltTab 偏好、登录项或授权。
 
@@ -49,11 +53,13 @@
 ## 本地测试入口
 
 ```sh
-./scripts/preview.sh        # 导出浅色/深色样本视图到 build/previews
+./scripts/preview.sh        # 导出切换器及缺权/已就绪设置的浅色、深色预览
 ./scripts/fixture.sh        # 打开三个可安全关闭的测试窗口
 build/Kaleido.app/Contents/MacOS/Kaleido --diagnose
 ```
 
 预览 PNG 是 AppKit 视图的离屏绘制，用于尺寸与文字排版检查，不包含实际桌面毛玻璃取样。真实透明效果通过正常浮层人工检查。
+
+`--preview --settings-preview` 显示固定的已就绪设置样本，加 `--missing-permission` 显示缺少权限样本。可配合 `--light` / `--dark` 和 `--export-preview <路径>` 导出；这些样本不启动权限监控或快捷键监听，也不修改系统授权。缺权到授权的监控生命周期由注入状态的 XCTest 验证。
 
 `IntegrationCheck` 是显式启用的 Debug 测试入口。它通过 CGEvent 发送真实全局按键，独立的 `FixtureAccessibility` actor 在后台查询测试窗口，避免阻塞主线程事件 tap。窗口管理动作限定在 `dev.waynexia.Kaleido.WindowFixture`；所有窗口范围只检查列表并取消。报告不含真实窗口标题，Release 不包含此入口。运行方法见验证记录。

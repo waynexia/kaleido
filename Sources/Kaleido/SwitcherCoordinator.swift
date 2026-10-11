@@ -50,7 +50,7 @@ final class SwitcherCoordinator {
 
     @discardableResult
     func start() -> Bool {
-        guard Accessibility.isTrusted else { return false }
+        // AppDelegate gates startup using the confirmed permission state.
         repository.start()
         return shortcuts.start()
     }

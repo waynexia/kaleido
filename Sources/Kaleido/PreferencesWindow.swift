@@ -10,7 +10,6 @@ final class PreferencesWindowController: NSWindowController {
     private let pauseToggle = NSButton(checkboxWithTitle: "暂停快捷键", target: nil, action: nil)
     private let profileSelector = NSPopUpButton()
     private let shortcutLabel = NSTextField(wrappingLabelWithString: "")
-    var onRecheck: (() -> Void)?
     var onMenuVisibilityChange: ((Bool) -> Void)?
     var onPauseChange: ((Bool) -> Void)?
     var onProfileChange: ((ShortcutProfile) -> Void)?
@@ -44,8 +43,7 @@ final class PreferencesWindowController: NSWindowController {
         stack.addArrangedSubview(statusLabel)
         permissionButton.target = self
         permissionButton.action = #selector(openPermissions)
-        let recheck = NSButton(title: "重新检查", target: self, action: #selector(recheckPermissions))
-        stack.addArrangedSubview(NSStackView(views: [permissionButton, recheck]))
+        stack.addArrangedSubview(permissionButton)
         let separator = NSBox()
         separator.boxType = .separator
         stack.addArrangedSubview(separator)
@@ -82,11 +80,36 @@ final class PreferencesWindowController: NSWindowController {
         window?.makeKeyAndOrderFront(nil)
     }
 
+    /// Renders the explicit preview state without changing system authorization.
+    func exportPreview(to url: URL) throws {
+        guard let content = window?.contentView else { return }
+        content.layoutSubtreeIfNeeded()
+        guard let bitmap = content.bitmapImageRepForCachingDisplay(in: content.bounds) else { return }
+        guard let context = CGContext(data: nil, width: bitmap.pixelsWide, height: bitmap.pixelsHigh,
+                                      bitsPerComponent: 8, bytesPerRow: bitmap.pixelsWide * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        var png: Data?
+        content.effectiveAppearance.performAsCurrentDrawingAppearance {
+            content.cacheDisplay(in: content.bounds, to: bitmap)
+            // Include the transparent content view's window background and emit
+            // standard 8-bit RGB instead of AppKit's extended-range bitmap.
+            let bounds = CGRect(x: 0, y: 0, width: bitmap.pixelsWide, height: bitmap.pixelsHigh)
+            context.setFillColor(NSColor.windowBackgroundColor.cgColor)
+            context.fill(bounds)
+            if let contentImage = bitmap.cgImage { context.draw(contentImage, in: bounds) }
+            if let image = context.makeImage() {
+                png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+            }
+        }
+        if let png { try png.write(to: url) }
+    }
+
     func updateStatus(trusted: Bool, listening: Bool, conflict: Bool, paused: Bool, profile: ShortcutProfile) {
         permissionButton.isHidden = trusted
         pauseToggle.state = paused ? .on : .off
         if !trusted {
-            statusLabel.stringValue = "需要辅助功能权限来读取和切换窗口。请在系统设置中允许 Kaleido。"
+            statusLabel.stringValue = "需要辅助功能权限来读取和切换窗口。请在系统设置中允许 Kaleido，完成后会自动确认。"
         } else if conflict {
             statusLabel.stringValue = "AltTab 正在使用相同的快捷键。请选择 Control + Option + K，或退出 AltTab。"
         } else if paused {
@@ -99,7 +122,6 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     @objc private func openPermissions() { Accessibility.openSettings() }
-    @objc private func recheckPermissions() { onRecheck?() }
     @objc private func toggleMenu() {
         let visible = menuToggle.state == .on
         UserDefaults.standard.set(visible, forKey: "showMenuBarIcon")

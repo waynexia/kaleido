@@ -5,13 +5,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = SwitcherCoordinator()
     private var settings: PreferencesWindowController?
     private var statusItem: NSStatusItem?
-    private var permissionTimer: Timer?
+    private lazy var permissionMonitor = PermissionMonitor(check: { Accessibility.isTrusted }, schedule: { tick in
+        let timer = Timer(timeInterval: 1.5, repeats: true) { _ in tick() }
+        RunLoop.main.add(timer, forMode: .common)
+        return { timer.invalidate() }
+    })
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var hasLaunched = false
     private var paused = false
     #if DEBUG
     private var integrationCheck: IntegrationCheck?
     #endif
     private var profile = ShortcutProfile(rawValue: UserDefaults.standard.string(forKey: "shortcutProfile") ?? "") ?? .standard
     private var isPreview: Bool { CommandLine.arguments.contains("--preview") }
+    private var isSettingsPreview: Bool { isPreview && CommandLine.arguments.contains("--settings-preview") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -23,11 +30,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.shortcuts.configure(profile: profile)
         createMenu()
         if isPreview {
-            coordinator.showPreview()
+            if isSettingsPreview {
+                let trusted = !CommandLine.arguments.contains("--missing-permission")
+                settings = PreferencesWindowController(profile: .standard)
+                settings?.updateStatus(trusted: trusted, listening: trusted, conflict: false, paused: false, profile: .standard)
+                if CommandLine.arguments.contains("--light") { settings?.window?.appearance = NSAppearance(named: .aqua) }
+                if CommandLine.arguments.contains("--dark") { settings?.window?.appearance = NSAppearance(named: .darkAqua) }
+                settings?.showWindow(nil)
+            } else {
+                coordinator.showPreview()
+            }
             if let index = CommandLine.arguments.firstIndex(of: "--export-preview"), CommandLine.arguments.count > index + 1 {
                 let path = CommandLine.arguments[index + 1]
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    do { try self?.coordinator.panel.exportPreview(to: URL(fileURLWithPath: path)) }
+                    do {
+                        if self?.isSettingsPreview == true { try self?.settings?.exportPreview(to: URL(fileURLWithPath: path)) }
+                        else { try self?.coordinator.panel.exportPreview(to: URL(fileURLWithPath: path)) }
+                    }
                     catch { fputs("Preview export failed: \(error)\n", stderr) }
                     NSApp.terminate(nil)
                 }
@@ -42,9 +61,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         updateMenuVisibility(UserDefaults.standard.bool(forKey: "showMenuBarIcon"))
-        refreshAvailability()
-        if !Accessibility.isTrusted || (altTabRunning && profile == .standard) { showPreferences() }
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in self?.refreshAvailability() }
+        observeApplicationChanges()
+        permissionMonitor.onChange = { [weak self] trusted in
+            guard let self else { return }
+            self.refreshAvailability()
+            if !trusted { self.showPreferences() }
+        }
+        permissionMonitor.start()
+        hasLaunched = true
+        if permissionMonitor.isTrusted, altTabRunning && profile == .standard { showPreferences() }
         #if DEBUG
         if let index = CommandLine.arguments.firstIndex(of: "--integration-check"), CommandLine.arguments.count > index + 1 {
             let check = IntegrationCheck(coordinator: coordinator, reportURL: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
@@ -59,11 +84,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshAvailability() {
-        let trusted = Accessibility.isTrusted
+        let trusted = permissionMonitor.isTrusted
         let conflict = altTabRunning && profile == .standard
         if trusted, !conflict, !paused { coordinator.start() }
         else { coordinator.pause() }
         settings?.updateStatus(trusted: trusted, listening: coordinator.shortcuts.isRunning, conflict: conflict, paused: paused, profile: profile)
+    }
+
+    private func observeApplicationChanges() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            workspaceObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                      app.bundleIdentifier == "com.lwouis.alt-tab-macos" else { return }
+                self?.refreshAvailability()
+            })
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard hasLaunched else { return }
+        permissionMonitor.checkIfNeeded()
+        refreshAvailability()
     }
 
     @objc func showPreferences() {
@@ -77,7 +119,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.coordinator.shortcuts.configure(profile: profile)
                 self.refreshAvailability()
             }
-            settings?.onRecheck = { [weak self] in self?.refreshAvailability() }
             settings?.onMenuVisibilityChange = { [weak self] in self?.updateMenuVisibility($0) }
             settings?.onPauseChange = { [weak self] value in self?.paused = value; self?.refreshAvailability() }
         }
@@ -93,7 +134,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationWillTerminate(_ notification: Notification) {
-        permissionTimer?.invalidate()
+        hasLaunched = false
+        permissionMonitor.stop()
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        workspaceObservers.removeAll()
         coordinator.pause()
     }
 

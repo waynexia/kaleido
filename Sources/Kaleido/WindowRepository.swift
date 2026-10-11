@@ -80,7 +80,6 @@ final class WindowRepository {
     }
 
     private func refresh() {
-        guard Accessibility.isTrusted else { return }
         let apps = NSWorkspace.shared.runningApplications.filter {
             $0.activationPolicy != .prohibited && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
                 && $0.bundleIdentifier != "com.McAfee.McAfeeSafariHost"
