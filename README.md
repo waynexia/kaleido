@@ -15,7 +15,7 @@ make preview  # 无需辅助功能权限的界面预览
 
 构建产物位于 `build/Kaleido.app`。脚本优先使用 `/Applications/Xcode.app`，不修改全局 `xcode-select`。默认使用登录钥匙串中的 `Kaleido Local Development` 证书签名，身份缺失时构建失败，不会自动退回 ad-hoc。发行构建可传入 `CODE_SIGN_IDENTITY`。
 
-`make check`、`make run`、`make preview` 和预览脚本都会更新同一应用包。更新前先退出正在运行的 Kaleido，再执行 `make run`；关闭设置窗口只会让应用留在后台，`make run` 也不会自动重启已有进程。
+`make check`、`make run`、`make preview` 和预览脚本都会更新同一应用包。更新前先退出正在运行的 Kaleido，再执行 `make run`；关闭设置窗口只会让应用留在后台。构建检测到 Kaleido 仍在运行时会拒绝替换，不会自动结束进程。新包在临时目录完成签名与自检后才安装；签名失败保留原包。
 
 ## 使用
 
