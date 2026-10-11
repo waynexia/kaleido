@@ -30,6 +30,7 @@ final class WindowRepository {
     private var observations: [pid_t: Observation] = [:]
     private var history = WindowHistory()
     private var lastFocusedID: String?
+    private var focusGeneration: UInt64 = 0
     private var refreshPending = false
     private var timer: DispatchSourceTimer?
     private var workspaceTokens: [NSObjectProtocol] = []
@@ -238,6 +239,8 @@ final class WindowRepository {
     func focus(_ id: String) {
         queue.async { [weak self] in
             guard let self, let record = self.records[id], !record.app.isTerminated else { return }
+            self.focusGeneration &+= 1
+            let generation = self.focusGeneration
             if record.app.isHidden { record.app.unhide() }
             if Accessibility.bool(record.element, kAXMinimizedAttribute) {
                 Accessibility.set(record.element, kAXMinimizedAttribute, kCFBooleanFalse)
@@ -246,7 +249,16 @@ final class WindowRepository {
             let raised = Accessibility.perform(record.element, kAXRaiseAction)
             let activated = record.app.activate(options: [.activateIgnoringOtherApps])
             // A second raise after activation prevents another window of the same app winning.
+            let retryDeadline = DispatchTime.now() + 0.25
             self.queue.asyncAfter(deadline: .now() + 0.08) {
+                // A newer selection/action or an external app activation supersedes this retry.
+                guard DispatchTime.now() < retryDeadline, generation == self.focusGeneration,
+                      !record.app.isTerminated, !record.app.isHidden,
+                      NSWorkspace.shared.frontmostApplication?.processIdentifier == record.app.processIdentifier,
+                      let current = self.records[id], CFEqual(current.element, record.element) else {
+                    self.requestRefresh()
+                    return
+                }
                 Accessibility.perform(record.element, kAXRaiseAction)
                 self.requestRefresh()
             }
@@ -260,6 +272,7 @@ final class WindowRepository {
     func perform(_ action: WindowAction, on id: String) {
         queue.async { [weak self] in
             guard let self, let record = self.records[id], !record.app.isTerminated else { return }
+            self.focusGeneration &+= 1
             var success = false
             switch action {
             case .close:

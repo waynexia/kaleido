@@ -14,10 +14,15 @@ final class IntegrationCheck {
     private var checks: [[String: Any]] = []
     private let source = CGEventSource(stateID: .hidSystemState)
     private var held: CGEventFlags = []
+    private let profile: ShortcutProfile
+    private let accessibilityTrusted: Bool
+    private var compareReference: Bool { CommandLine.arguments.contains("--compare-reference") }
 
-    init(coordinator: SwitcherCoordinator, reportURL: URL) {
+    init(coordinator: SwitcherCoordinator, reportURL: URL, profile: ShortcutProfile, accessibilityTrusted: Bool) {
         self.coordinator = coordinator
         self.reportURL = reportURL
+        self.profile = profile
+        self.accessibilityTrusted = accessibilityTrusted
     }
 
     private struct Failure: Error, CustomStringConvertible {
@@ -30,14 +35,33 @@ final class IntegrationCheck {
         let previous = NSWorkspace.shared.frontmostApplication
         defer { release(); previous?.activate(options: [.activateIgnoringOtherApps]) }
         do {
+            if compareReference {
+                guard profile == .coexistence,
+                      !NSRunningApplication.runningApplications(withBundleIdentifier: "com.lwouis.alt-tab-macos").isEmpty else {
+                    throw Failure("Reference comparison requires the coexistence profile and an already running AltTab")
+                }
+            }
             try await wait("accessibility and event tap", timeout: 8) {
-                Accessibility.isTrusted && self.coordinator.shortcuts.isRunning
+                self.accessibilityTrusted && self.coordinator.shortcuts.isRunning
             }
             fixture = NSRunningApplication.runningApplications(withBundleIdentifier: fixtureBundle).first
             guard let fixture else { throw Failure("Start WindowFixture.app before the integration check") }
             try await wait("three fixture windows") { (await self.fixtureWindows).count == 3 }
             try await wait("window inventory") { self.coordinator.inspectionWindows.filter { $0.bundleIdentifier == self.fixtureBundle }.count == 3 }
             record("enumerate-three-real-windows", detail: ["totalWindowCount": coordinator.windowCount])
+
+            try await focus("Three")
+            let fixtureWindows = coordinator.inspectionWindows.filter { $0.bundleIdentifier == fixtureBundle }
+            guard let first = fixtureWindows.first(where: { $0.title == "Kaleido Test — One" }),
+                  let latest = fixtureWindows.first(where: { $0.title == "Kaleido Test — Two" }) else {
+                throw Failure("Missing fixture focus targets")
+            }
+            coordinator.repository.focus(first.id)
+            coordinator.repository.focus(latest.id)
+            try await wait("latest focus request wins") { await self.focusedName == "Two" }
+            try await pause(0.3)
+            guard await focusedName == "Two" else { throw Failure("A stale focus retry changed the latest selection") }
+            record("rapid-focus-keeps-latest-selection")
 
             try await focus("Three")
             try await begin(currentOnly: true)
@@ -60,9 +84,9 @@ final class IntegrationCheck {
             try await begin(currentOnly: true)
             let reverseStart = coordinator.inspectionSelection.selectedIndex!
             let total = coordinator.inspectionSelection.windows.count
-            setHeld([.maskControl, .maskAlternate, .maskShift])
+            setHeld(flags(profile.applicationWindows.modifiers.union(.shift)))
             try await wait("Shift reverses selection") { self.coordinator.inspectionSelection.selectedIndex == (reverseStart + total - 1) % total }
-            try await key(38)
+            try await key(profile.applicationWindows.keyCode)
             guard coordinator.inspectionSelection.selectedIndex == (reverseStart + total - 1) % total else {
                 throw Failure("Shift plus cycle moved twice")
             }
@@ -73,8 +97,8 @@ final class IntegrationCheck {
             record("reverse-chord-and-space-focus")
 
             try await pause(0.3)
-            setHeld([.maskControl, .maskAlternate])
-            try await key(38, interval: 0.01)
+            setHeld(flags(profile.applicationWindows.modifiers))
+            try await key(profile.applicationWindows.keyCode, interval: 0.01)
             let quickTarget = coordinator.inspectionSelection.selected?.title
             guard coordinator.inspectionActive, !coordinator.panel.panel.isVisible else { throw Failure("Quick switch displayed prematurely") }
             release()
@@ -92,7 +116,7 @@ final class IntegrationCheck {
             record("arrow-navigation")
 
             try await begin(currentOnly: false)
-            guard coordinator.inspectionSelection.windows.count > 3 else { throw Failure("All-window scope omitted other applications") }
+            guard coordinator.inspectionSelection.windows.count >= 3 else { throw Failure("All-window scope omitted fixture windows") }
             let size = coordinator.panel.panel.frame.size
             record("all-window-panel", detail: ["width": size.width, "height": size.height,
                                                 "windowCount": coordinator.inspectionSelection.windows.count])
@@ -107,12 +131,12 @@ final class IntegrationCheck {
             try await focus("Three")
             try await choose("Two")
             try await key(46)
-            try await wait("minimize fixture") { await self.attribute("Two", kAXMinimizedAttribute) }
+            try await wait("minimize fixture") { await self.attribute("Two", kAXMinimizedAttribute) == true }
             release()
             try await wait("restore minimized fixture") {
                 let minimized = await self.attribute("Two", kAXMinimizedAttribute)
                 let focused = await self.focusedName
-                return !minimized && focused == "Two"
+                return minimized == false && focused == "Two"
             }
             // AX state updates before AppKit's minimize/restore animation and application
             // activation finish. Let the system settle before starting a different scenario.
@@ -132,30 +156,32 @@ final class IntegrationCheck {
 
             try await choose("One")
             try await key(3)
-            try await wait("enter fullscreen", timeout: 10) { await self.attribute("One", "AXFullScreen") }
+            try await wait("enter fullscreen", timeout: 10) { await self.attribute("One", "AXFullScreen") == true }
             try await pause(1.2)
             try await key(3)
-            try await wait("exit fullscreen", timeout: 10) { !(await self.attribute("One", "AXFullScreen")) }
+            try await wait("exit fullscreen", timeout: 10) { await self.attribute("One", "AXFullScreen") == false }
             release()
             try await pause(1.2)
             record("fullscreen-toggle")
 
-            // Exercise the installed reference without changing any of its preferences.
-            try await focus("Three")
-            setHeld(.maskControl)
-            try await key(48)
-            try await pause(0.4)
-            let reference = referencePanels()
-            guard !reference.isEmpty else { throw Failure("AltTab did not display a visible panel for Control+Tab") }
-            record("alttab-coexists-and-opens", detail: ["panels": reference])
-            // Optional capture gate keeps the real reference panel open for CUA inspection.
-            if CommandLine.arguments.contains("--capture-reference") {
-                writeReport(status: "reference-visible")
-                let gate = reportURL.appendingPathExtension("continue")
-                try await wait("reference capture", timeout: 45) { FileManager.default.fileExists(atPath: gate.path) }
+            // Reference comparison is optional; normal smoke tests preserve the saved profile.
+            if compareReference {
+                try await focus("Three")
+                setHeld(.maskControl)
+                try await key(48)
+                try await pause(0.4)
+                let reference = referencePanels()
+                guard !reference.isEmpty else { throw Failure("AltTab did not display a visible panel for Control+Tab") }
+                record("alttab-coexists-and-opens", detail: ["panels": reference])
+                // Optional capture gate keeps the real reference panel open for CUA inspection.
+                if CommandLine.arguments.contains("--capture-reference") {
+                    writeReport(status: "reference-visible")
+                    let gate = reportURL.appendingPathExtension("continue")
+                    try await wait("reference capture", timeout: 45) { FileManager.default.fileExists(atPath: gate.path) }
+                }
+                try await key(53); release()
+                try await pause(0.2)
             }
-            try await key(53); release()
-            try await pause(0.2)
 
             try await focus("Three")
             try await choose("One")
@@ -174,7 +200,7 @@ final class IntegrationCheck {
             release()
             try await wait("remove terminated windows") { !self.coordinator.inspectionWindows.contains { $0.bundleIdentifier == self.fixtureBundle } }
             record("quit-removes-windowless-application")
-            guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.lwouis.alt-tab-macos").isEmpty else {
+            if compareReference, NSRunningApplication.runningApplications(withBundleIdentifier: "com.lwouis.alt-tab-macos").isEmpty {
                 throw Failure("AltTab unexpectedly stopped")
             }
             writeReport(status: "passed")
@@ -184,12 +210,12 @@ final class IntegrationCheck {
                 "sessionActive": coordinator.inspectionActive,
                 "selectedFixture": selected?.bundleIdentifier == fixtureBundle ? selected?.title ?? "none" : "other",
                 "focusedFixture": await focusedName ?? "none",
-                "fixtureTwoMinimized": await attribute("Two", kAXMinimizedAttribute),
+                "fixtureTwoMinimized": (await attribute("Two", kAXMinimizedAttribute)).map { String($0) } ?? "unknown",
                 "fixtureWindowCount": (await fixtureWindows).count,
                 "injectedEvents": coordinator.shortcuts.integrationEvents,
                 "sessionFlags": CGEventSource.flagsState(.combinedSessionState).rawValue,
             ]])
-            try? await key(53)
+            if coordinator.inspectionActive { try? await key(53) }
             release()
             writeReport(status: "failed", error: String(describing: error))
         }
@@ -212,8 +238,8 @@ final class IntegrationCheck {
         get async { await focusedTitle?.replacingOccurrences(of: "Kaleido Test — ", with: "") }
     }
 
-    private func attribute(_ name: String, _ attribute: String) async -> Bool {
-        guard let fixture else { return false }
+    private func attribute(_ name: String, _ attribute: String) async -> Bool? {
+        guard let fixture else { return nil }
         return await fixtureAX.attribute(pid: fixture.processIdentifier, name: name, attribute: attribute)
     }
 
@@ -224,14 +250,22 @@ final class IntegrationCheck {
         guard await fixtureAX.focus(pid: fixture.processIdentifier, name: name) else {
             throw Failure("Missing disposable fixture window")
         }
+        // Activation may restore the application's previous key window asynchronously.
+        // Stabilize the fixture setup before testing whether a switcher cancellation preserves it.
+        try await pause(0.1)
+        guard await fixtureAX.focus(pid: fixture.processIdentifier, name: name) else {
+            throw Failure("Cannot stabilize disposable fixture focus")
+        }
         try await wait("activate disposable fixture") { await self.focusedName == name }
         coordinator.repository.requestRefresh()
         try await pause(0.35)
+        guard await focusedName == name else { throw Failure("Fixture setup lost focus before sending a shortcut") }
     }
 
     private func begin(currentOnly: Bool) async throws {
-        setHeld([.maskControl, .maskAlternate])
-        try await key(currentOnly ? 38 : 40)
+        let binding = currentOnly ? profile.applicationWindows : profile.allWindows
+        setHeld(flags(binding.modifiers))
+        try await key(binding.keyCode)
         try await wait("global shortcut opens panel") { self.coordinator.inspectionActive && self.coordinator.panel.panel.isVisible }
     }
 
@@ -242,7 +276,7 @@ final class IntegrationCheck {
                 try assertFixtureSelection()
                 return
             }
-            try await key(38)
+            try await key(profile.applicationWindows.keyCode)
         }
         throw Failure("Cannot select disposable fixture")
     }
@@ -268,7 +302,16 @@ final class IntegrationCheck {
 
     private func release() { setHeld([]) }
 
+    private func flags(_ modifiers: KeyModifiers) -> CGEventFlags {
+        var flags: CGEventFlags = []
+        if modifiers.contains(.control) { flags.insert(.maskControl) }
+        if modifiers.contains(.option) { flags.insert(.maskAlternate) }
+        if modifiers.contains(.shift) { flags.insert(.maskShift) }
+        return flags
+    }
+
     private func key(_ code: CGKeyCode, interval: Double = 0.045) async throws {
+        if [13, 46, 3, 12, 4].contains(code) { try assertFixtureSelection() }
         for down in [true, false] {
             let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)!
             event.flags = held
@@ -305,7 +348,8 @@ final class IntegrationCheck {
     }
 
     private func writeReport(status: String, error: String? = nil) {
-        var report: [String: Any] = ["status": status, "checks": checks, "accessibilityTrusted": Accessibility.isTrusted]
+        var report: [String: Any] = ["status": status, "checks": checks, "accessibilityTrusted": accessibilityTrusted,
+                                   "shortcutProfile": profile.rawValue, "referenceComparison": compareReference]
         if let error { report["error"] = error }
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: reportURL, options: .atomic)
@@ -336,8 +380,9 @@ private actor FixtureAccessibility {
         return Accessibility.string(window, kAXTitleAttribute)
     }
 
-    func attribute(pid: pid_t, name: String, attribute: String) -> Bool {
-        window(pid, name).map { Accessibility.bool($0, attribute) } ?? false
+    func attribute(pid: pid_t, name: String, attribute: String) -> Bool? {
+        guard let window = window(pid, name) else { return nil }
+        return (Accessibility.value(window, attribute) as? NSNumber)?.boolValue
     }
 
     func focus(pid: pid_t, name: String) -> Bool {

@@ -23,6 +23,8 @@
 
 `Accessibility` 在每次属性读取、写入、动作和 ID 桥接前，对实际 AX 对象设置 200 ms 消息超时。只设置应用根对象不会覆盖返回的窗口或子控件（[Apple API 语义](https://developer.apple.com/documentation/applicationservices/1459345-axuielementsetmessagingtimeout)）。批量属性中的 AXError / CFNull 作为缺失值处理，整批失败不视为空列表；显式空标题和 false 状态仍正常更新。原生边界测试通过注入批量响应验证，不访问真实窗口或修改权限。
 
+聚焦后的第二次 raise 在 80 ms 后尝试；新聚焦请求或窗口动作会使旧请求失效，目标已隐藏/退出/移除或用户切换到其他应用时也不再执行。繁忙队列使重试超过 250 ms 时直接放弃，用单调时钟限制重试有效期。
+
 ## 权限和进程
 
 仅需要辅助功能授权，不需要屏幕录制；不使用 AppleScript、截图、网络服务或私有窗口操作接口。窗口标题和 MRU 只驻留内存，诊断输出不包含标题。开发预览使用内置样本数据。
@@ -69,4 +71,4 @@ build/Kaleido.app/Contents/MacOS/Kaleido --diagnose
 
 `--preview --settings-preview` 显示固定的已就绪设置样本，加 `--missing-permission` 显示缺少权限样本。可配合 `--light` / `--dark` 和 `--export-preview <路径>` 导出；这些样本不启动权限监控或快捷键监听，也不修改系统授权。预览中登录项控制禁用，菜单栏开关仅改变样本，不写偏好；`--coexist` 在预览时不保存方案。缺权到授权的监控生命周期由注入状态的 XCTest 验证。
 
-`IntegrationCheck` 是显式启用的 Debug 测试入口。它通过 CGEvent 发送真实全局按键，独立的 `FixtureAccessibility` actor 在后台查询测试窗口，避免阻塞主线程事件 tap。窗口管理动作限定在 `dev.waynexia.Kaleido.WindowFixture`；所有窗口范围只检查列表并取消。报告不含真实窗口标题，Release 不包含此入口。运行方法见验证记录。
+`IntegrationCheck` 是显式启用的 Debug 测试入口。它使用启动时已确认的权限状态及当前保存的快捷键方案，通过 CGEvent 发送真实全局按键，独立的 `FixtureAccessibility` actor 在后台查询测试窗口，避免阻塞主线程事件 tap。每次窗口管理按键前确认目标属于 `dev.waynexia.Kaleido.WindowFixture`；所有窗口范围只检查列表并取消。属性读取失败不当作 false 验收成功。标准方案不依赖 AltTab，只有显式 `--compare-reference` 才检查已运行的参照应用。报告不含真实窗口标题，Release 不包含此入口。运行方法见验证记录。

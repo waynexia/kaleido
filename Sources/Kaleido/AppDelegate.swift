@@ -75,7 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if permissionMonitor.isTrusted, altTabRunning && profile == .standard { showPreferences() }
         #if DEBUG
         if let index = CommandLine.arguments.firstIndex(of: "--integration-check"), CommandLine.arguments.count > index + 1 {
-            let check = IntegrationCheck(coordinator: coordinator, reportURL: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+            let check = IntegrationCheck(coordinator: coordinator, reportURL: URL(fileURLWithPath: CommandLine.arguments[index + 1]),
+                                         profile: profile, accessibilityTrusted: permissionMonitor.isTrusted)
             integrationCheck = check
             Task { await check.run() }
         }

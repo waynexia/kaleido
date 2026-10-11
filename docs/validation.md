@@ -8,7 +8,7 @@
 
 ## 自动检查
 
-- `make check`：18 项 XCTest（14 项切换行为、4 项权限生命周期）、Debug 构建、Info.plist、codesign、应用包自检及签名连续性检查通过。
+- 最新 `make check`：29 项 XCTest（18 项切换行为、4 项权限生命周期、7 项原生 AX/UI 边界）、Debug 构建、Info.plist、codesign、应用包自检及签名连续性检查通过。
 - `swift build -c release`：优化构建通过；全局测试驱动由 `#if DEBUG` 隔离，不进入 Release。
 - 浅色、深色、40 行长标题预览已导出检查。产物位于被 Git 忽略的 `build/previews/`。
 - `bash -n scripts/*.sh` 与 `git diff --check` 通过。
@@ -24,6 +24,23 @@
 - 构建：改为临时包签名、自检通过后再安装，校验默认本地身份与旧包一致；运行中拒绝替换，禁止 ad-hoc 覆盖证书构建。`make check`（27 项测试）通过；分别用不存在的签名身份、显式 ad-hoc 和正在运行的 Kaleido 验证拒绝路径，原可执行文件 SHA-256 保持一致、签名仍有效。Shell 语法检查通过。
 - 经 LaunchServices 打开 UI 修复后的正常构建，实际设置界面仍显示 Control + Tab、菜单栏图标开启及“已就绪”；未重新授权。此时 AltTab 保持退出。随后退出应用继续后续审查。
 - 设置页：等待批准的登录项保持勾选并显示明确状态；返回应用时刷新。预览的菜单开关和 `--coexist` 不再写真实偏好，登录项按钮禁用；普通重复实例在应用命令行偏好前退出。`make check` 通过 29 项测试及签名检查。新增 AppKit 测试验证等待/批准/移除状态与预览点击不写偏好；实际导出带 `--coexist` 的预览后确认保存方案仍为 standard。浅色已就绪、深色缺权预览已检查。没有注册真实登录项，实际重新登录仍待验收。
+
+## 标准方案实机回归（2026-10-11）
+
+审查中为延迟聚焦增加请求代次、前台应用/窗口有效性与 250 ms 有效期检查，避免旧重试抢回焦点。Debug 驱动改为使用保存的方案与启动权限结果，参照比较改为显式选项；不再为标准方案测试切换配置或启动 AltTab。
+
+- `make check` 的 29 项测试、签名连续性检查及 `swift build -c release` 通过。
+- 经 LaunchServices 运行标准方案，在 Window Fixture 上完成 13 项实机检查：三窗口枚举、连续聚焦保留最新选择、取消保持焦点和 MRU、松键聚焦、Shift/Space、快速松键不显示面板、方向键、全窗口面板、最小化恢复、隐藏/显示、全屏往返、关闭后选择迁移、退出后移除记录。
+- 首次运行的取消检查失败。测试准备阶段补上激活后的再次聚焦，并增加发送快捷键前焦点稳定断言；之后完整通过。最后增加重试有效期保护后再次完整通过。失败与成功报告均保留在忽略的 `build/review-standard-*.json` 中，不含真实窗口标题。
+- 最终报告为 `build/review-standard-final.json`，`status=passed`、`shortcutProfile=standard`、`referenceComparison=false`、`accessibilityTrusted=true`。面板为 820 × 786 点。测试应用已退出，AltTab 未启动，也未修改权限、登录项或保存的菜单栏偏好。
+
+标准方案复现方法：先退出 Kaleido，确认没有旧 Window Fixture，再运行下列命令。驱动发送真实全局按键，运行时不要同时操作键盘。测试动作只针对可丢弃的 Window Fixture；全窗口面板仅观察并取消。
+
+```sh
+make check
+./scripts/fixture.sh
+open build/Kaleido.app --args --integration-check "$PWD/build/standard-integration.json"
+```
 
 ## 自动权限引导
 
@@ -80,7 +97,7 @@
 
 ## 复现早期共存验收
 
-以下驱动依赖 AltTab 和共存方案，仅用于明确需要的并排比较。当前日常使用仅运行 Kaleido，不应为常规检查自动启动 AltTab 或覆盖标准方案。
+以下参照比较依赖 AltTab 和共存方案，仅用于明确需要的并排比较，必须加 `--compare-reference`。当前日常使用仅运行 Kaleido，不应为常规检查自动启动 AltTab 或覆盖标准方案。
 
 先退出正在运行的 Kaleido 和旧 Window Fixture，保留 AltTab。驱动会检查 AltTab 能否通过 Control + Tab 唤出，因此需要保持该参照快捷键配置。使用 Debug 构建：
 
@@ -92,7 +109,7 @@ CONFIGURATION=debug make check
 
 ```sh
 ./scripts/fixture.sh
-open build/Kaleido.app --args --coexist --integration-check "$PWD/build/integration-report.json"
+open build/Kaleido.app --args --coexist --compare-reference --integration-check "$PWD/build/integration-report.json"
 ```
 
 这是显式启用的 Debug 集成测试，会短暂发送全局按键并改变测试窗口。运行期间不要同时操作键盘。成功后退出测试应用，Kaleido 继续后台运行。报告的 `status` 为 `passed` 或 `failed`；测试不会修改 AltTab 配置。
