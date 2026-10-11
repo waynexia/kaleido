@@ -16,6 +16,11 @@ final class SwitcherCoordinator {
     private var preview = false
     var onAvailabilityChange: (() -> Void)?
     var windowCount: Int { windows.count }
+    #if DEBUG
+    var inspectionWindows: [WindowDescriptor] { windows }
+    var inspectionSelection: SwitcherSelection { selection }
+    var inspectionActive: Bool { active }
+    #endif
 
     init() {
         repository.onChange = { [weak self] windows, icons in

@@ -29,14 +29,16 @@ public struct ShortcutResult: Equatable {
 
 /// Pure state machine: the event tap only routes input; it never enumerates windows.
 public struct ShortcutRouter {
+    public let profile: ShortcutProfile
     public private(set) var hold: KeyModifiers?
+    private var cycleKey: UInt16?
     private var captured = Set<UInt16>()
     private var previousModifiers: KeyModifiers = []
     private var shiftAlreadyMoved = false
 
-    public init() {}
+    public init(profile: ShortcutProfile = .standard) { self.profile = profile }
 
-    public mutating func reset() { hold = nil; shiftAlreadyMoved = false }
+    public mutating func reset() { hold = nil; cycleKey = nil; shiftAlreadyMoved = false }
 
     public mutating func modifiersChanged(_ modifiers: KeyModifiers) -> ShortcutResult {
         defer { previousModifiers = modifiers }
@@ -53,8 +55,13 @@ public struct ShortcutRouter {
         return ShortcutResult()
     }
 
-    public mutating func keyUp(_ code: UInt16) -> ShortcutResult {
-        ShortcutResult(captured.remove(code) != nil)
+    public mutating func keyUp(_ code: UInt16, modifiers: KeyModifiers? = nil) -> ShortcutResult {
+        let consumed = captured.remove(code) != nil
+        if let modifiers, let hold, !modifiers.contains(hold) {
+            reset()
+            return ShortcutResult(consumed, .commit)
+        }
+        return ShortcutResult(consumed)
     }
 
     public mutating func keyDown(_ code: UInt16, modifiers: KeyModifiers, isRepeat: Bool = false) -> ShortcutResult {
@@ -62,16 +69,17 @@ public struct ShortcutRouter {
         let backwards = modifiers.contains(.shift)
         if hold == nil {
             let base = modifiers.subtracting(.shift)
-            let all = code == 48 && base == .control
-            let current = code == 50 && base == .option
+            let all = code == profile.allWindows.keyCode && base == profile.allWindows.modifiers
+            let current = code == profile.applicationWindows.keyCode && base == profile.applicationWindows.modifiers
             guard all || current else { return ShortcutResult() }
-            hold = all ? .control : .option
+            hold = all ? profile.allWindows.modifiers : profile.applicationWindows.modifiers
+            cycleKey = code
             captured.insert(code)
             return ShortcutResult(true, .begin(currentApplicationOnly: current, backwards: backwards))
         }
         let command: ShortcutCommand?
         switch code {
-        case 48, 50:
+        case 48, 50, cycleKey:
             // Shift itself moves once; the following Tab belongs to the same reverse chord.
             command = backwards && shiftAlreadyMoved ? nil : .move(backwards ? -1 : 1)
             shiftAlreadyMoved = false

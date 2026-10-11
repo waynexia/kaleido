@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import KaleidoCore
 
 final class PreferencesWindowController: NSWindowController {
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
@@ -7,12 +8,15 @@ final class PreferencesWindowController: NSWindowController {
     private let loginToggle = NSButton(checkboxWithTitle: "登录时启动", target: nil, action: nil)
     private let menuToggle = NSButton(checkboxWithTitle: "在菜单栏显示图标", target: nil, action: nil)
     private let pauseToggle = NSButton(checkboxWithTitle: "暂停快捷键", target: nil, action: nil)
+    private let profileSelector = NSPopUpButton()
+    private let shortcutLabel = NSTextField(wrappingLabelWithString: "")
     var onRecheck: (() -> Void)?
     var onMenuVisibilityChange: ((Bool) -> Void)?
     var onPauseChange: ((Bool) -> Void)?
+    var onProfileChange: ((ShortcutProfile) -> Void)?
 
-    init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 454),
+    init(profile: ShortcutProfile) {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 492),
                               styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Kaleido"
         window.isReleasedWhenClosed = false
@@ -46,11 +50,16 @@ final class PreferencesWindowController: NSWindowController {
         separator.boxType = .separator
         stack.addArrangedSubview(separator)
         separator.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        let shortcuts = NSTextField(wrappingLabelWithString:
-            "⌃ Tab    切换窗口\n⌥ `         切换当前应用的窗口\n⇧ / 方向键    反向 / 移动选择\nSpace    聚焦       Esc    取消\nW  关闭    M  最小化    F  全屏    Q  退出    H  隐藏")
-        shortcuts.font = .systemFont(ofSize: 13)
-        shortcuts.widthAnchor.constraint(equalToConstant: 424).isActive = true
-        stack.addArrangedSubview(shortcuts)
+        profileSelector.addItems(withTitles: ["Control + Tab", "Control + Option + K"])
+        profileSelector.selectItem(at: ShortcutProfile.allCases.firstIndex(of: profile) ?? 0)
+        profileSelector.target = self
+        profileSelector.action = #selector(changeProfile)
+        profileSelector.setAccessibilityLabel("窗口切换快捷键")
+        stack.addArrangedSubview(NSStackView(views: [NSTextField(labelWithString: "快捷键"), profileSelector]))
+        updateShortcutLabel(profile)
+        shortcutLabel.font = .systemFont(ofSize: 13)
+        shortcutLabel.widthAnchor.constraint(equalToConstant: 424).isActive = true
+        stack.addArrangedSubview(shortcutLabel)
         loginToggle.state = SMAppService.mainApp.status == .enabled ? .on : .off
         loginToggle.target = self
         loginToggle.action = #selector(toggleLogin)
@@ -73,17 +82,17 @@ final class PreferencesWindowController: NSWindowController {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    func updateStatus(trusted: Bool, listening: Bool, conflict: Bool, paused: Bool) {
+    func updateStatus(trusted: Bool, listening: Bool, conflict: Bool, paused: Bool, profile: ShortcutProfile) {
         permissionButton.isHidden = trusted
         pauseToggle.state = paused ? .on : .off
         if !trusted {
             statusLabel.stringValue = "需要辅助功能权限来读取和切换窗口。请在系统设置中允许 Kaleido。"
         } else if conflict {
-            statusLabel.stringValue = "AltTab 正在使用相同的快捷键。退出 AltTab 后，Kaleido 会自动接管。"
+            statusLabel.stringValue = "AltTab 正在使用相同的快捷键。请选择 Control + Option + K，或退出 AltTab。"
         } else if paused {
             statusLabel.stringValue = "快捷键已暂停。"
         } else if listening {
-            statusLabel.stringValue = "已就绪。按住 Control，再按 Tab 切换窗口。"
+            statusLabel.stringValue = "已就绪。使用 \(profile.allWindows.label) 切换窗口，松开修饰键聚焦。"
         } else {
             statusLabel.stringValue = "无法监听快捷键。请检查辅助功能权限，或关闭安全输入后重试。"
         }
@@ -97,6 +106,16 @@ final class PreferencesWindowController: NSWindowController {
         onMenuVisibilityChange?(visible)
     }
     @objc private func togglePause() { onPauseChange?(pauseToggle.state == .on) }
+
+    @objc private func changeProfile() {
+        let profile = ShortcutProfile.allCases[profileSelector.indexOfSelectedItem]
+        updateShortcutLabel(profile)
+        onProfileChange?(profile)
+    }
+
+    private func updateShortcutLabel(_ profile: ShortcutProfile) {
+        shortcutLabel.stringValue = "\(profile.allWindows.label)    切换窗口\n\(profile.applicationWindows.label)    切换当前应用的窗口\n⇧ / 方向键    反向 / 移动选择\nSpace    聚焦       Esc    取消\nW  关闭    M  最小化    F  全屏    Q  退出    H  隐藏"
+    }
 
     @objc private func toggleLogin() {
         do {

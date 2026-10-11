@@ -1,4 +1,5 @@
 import AppKit
+import KaleidoCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = SwitcherCoordinator()
@@ -6,10 +7,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var permissionTimer: Timer?
     private var paused = false
+    #if DEBUG
+    private var integrationCheck: IntegrationCheck?
+    #endif
+    private var profile = ShortcutProfile(rawValue: UserDefaults.standard.string(forKey: "shortcutProfile") ?? "") ?? .standard
     private var isPreview: Bool { CommandLine.arguments.contains("--preview") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        if CommandLine.arguments.contains("--coexist") {
+            profile = .coexistence
+            UserDefaults.standard.set(profile.rawValue, forKey: "shortcutProfile")
+        }
+        coordinator.shortcuts.configure(profile: profile)
         createMenu()
         if isPreview {
             coordinator.showPreview()
@@ -32,8 +42,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         updateMenuVisibility(UserDefaults.standard.bool(forKey: "showMenuBarIcon"))
         refreshAvailability()
-        if !Accessibility.isTrusted || altTabRunning { showPreferences() }
+        if !Accessibility.isTrusted || (altTabRunning && profile == .standard) { showPreferences() }
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in self?.refreshAvailability() }
+        #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--integration-check"), CommandLine.arguments.count > index + 1 {
+            let check = IntegrationCheck(coordinator: coordinator, reportURL: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+            integrationCheck = check
+            Task { await check.run() }
+        }
+        #endif
     }
 
     private var altTabRunning: Bool {
@@ -42,15 +59,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshAvailability() {
         let trusted = Accessibility.isTrusted
-        let conflict = altTabRunning
+        let conflict = altTabRunning && profile == .standard
         if trusted, !conflict, !paused { coordinator.start() }
         else { coordinator.pause() }
-        settings?.updateStatus(trusted: trusted, listening: coordinator.shortcuts.isRunning, conflict: conflict, paused: paused)
+        settings?.updateStatus(trusted: trusted, listening: coordinator.shortcuts.isRunning, conflict: conflict, paused: paused, profile: profile)
     }
 
     @objc func showPreferences() {
         if settings == nil {
-            settings = PreferencesWindowController()
+            settings = PreferencesWindowController(profile: profile)
+            settings?.onProfileChange = { [weak self] profile in
+                guard let self else { return }
+                self.coordinator.pause()
+                self.profile = profile
+                UserDefaults.standard.set(profile.rawValue, forKey: "shortcutProfile")
+                self.coordinator.shortcuts.configure(profile: profile)
+                self.refreshAvailability()
+            }
             settings?.onRecheck = { [weak self] in self?.refreshAvailability() }
             settings?.onMenuVisibilityChange = { [weak self] in self?.updateMenuVisibility($0) }
             settings?.onPauseChange = { [weak self] value in self?.paused = value; self?.refreshAvailability() }

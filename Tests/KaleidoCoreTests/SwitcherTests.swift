@@ -118,4 +118,32 @@ final class SwitcherTests: XCTestCase {
         XCTAssertEqual(router.keyDown(126, modifiers: .control).command, .move(-1))
         XCTAssertEqual(router.keyDown(125, modifiers: .control).command, .move(1))
     }
+
+    func testCoexistenceDoesNotCaptureAltTabChords() {
+        var router = ShortcutRouter(profile: .coexistence)
+        XCTAssertFalse(router.keyDown(48, modifiers: .control).consume)
+        XCTAssertFalse(router.keyDown(50, modifiers: .option).consume)
+        XCTAssertFalse(router.keyDown(40, modifiers: [.control, .option, .command]).consume)
+        XCTAssertEqual(router.keyDown(40, modifiers: [.control, .option]).command,
+                       .begin(currentApplicationOnly: false, backwards: false))
+        XCTAssertEqual(router.keyDown(40, modifiers: [.control, .option]).command, .move(1))
+        XCTAssertEqual(router.modifiersChanged(.control).command, .commit)
+        XCTAssertTrue(router.keyUp(40).consume)
+    }
+
+    func testCoexistenceCurrentApplicationAndReverse() {
+        var router = ShortcutRouter(profile: .coexistence)
+        XCTAssertEqual(router.keyDown(38, modifiers: [.control, .option, .shift]).command,
+                       .begin(currentApplicationOnly: true, backwards: true))
+        XCTAssertEqual(router.keyDown(38, modifiers: [.control, .option, .shift]).command, .move(-1))
+        XCTAssertEqual(router.modifiersChanged(.option).command, .commit)
+    }
+
+    func testMissingModifierNotificationCommitsOnKeyUp() {
+        var router = ShortcutRouter(profile: .coexistence)
+        _ = router.keyDown(40, modifiers: [.control, .option])
+        XCTAssertEqual(router.keyUp(40, modifiers: []), ShortcutResult(true, .commit))
+        XCTAssertNil(router.hold)
+        XCTAssertFalse(router.keyDown(12, modifiers: .command).consume)
+    }
 }

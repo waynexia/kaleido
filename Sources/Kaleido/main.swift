@@ -11,6 +11,7 @@ if CommandLine.arguments.contains("--self-check") {
         "bundleIdentifier": Bundle.main.bundleIdentifier ?? "unbundled",
         "altTabRunning": !NSRunningApplication.runningApplications(withBundleIdentifier: "com.lwouis.alt-tab-macos").isEmpty,
         "screenRecordingRequired": false,
+        "shortcutProfile": UserDefaults.standard.string(forKey: "shortcutProfile") ?? "standard",
     ]
     let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
     print(String(decoding: data, as: UTF8.self))

@@ -6,9 +6,9 @@
 
 `Kaleido` 是 AppKit 应用：
 
-- `WindowRepository` 在串行工作队列中读取 AX 窗口；AXObserver 及 NSWorkspace 通知驱动刷新，3 秒轮询兜底，60 ms 合并通知。单次 AX 消息设超时，避免某个失去响应的应用卡住主线程。
+- `WindowRepository` 在串行工作队列中读取普通应用及辅助应用的标准窗口和对话框；AXObserver 及 NSWorkspace 通知驱动刷新，3 秒轮询兜底，60 ms 合并通知。单次 AX 消息设超时，失败时保留已知记录。Space 动画造成的不完整列表保留最多 1.5 秒并重试；明确的销毁通知和应用退出立即移除。
 - `Accessibility` 集中封装 AX 读写。动态查找 `_AXUIElementGetWindow` 来关联 WindowServer 的稳定 ID；该非公开符号不可用时退回 AX 对象比较。该兼容边界不用于执行窗口动作。
-- `GlobalShortcuts` 在主 RunLoop 上用 CGEventTap 截获输入，调用纯状态机。事件回调不执行 AX 枚举或网络操作。事件 tap 被系统禁用时取消当前会话并重新启用。
+- `GlobalShortcuts` 在主 RunLoop 上用 CGEventTap 截获输入，调用纯状态机。事件回调不执行 AX 枚举或网络操作。会话期间以 25 ms 定时核对修饰键状态，防止遗漏松键通知后继续吞掉输入。事件 tap 被系统禁用时取消当前会话并重新启用。
 - `SwitcherCoordinator` 管理缓存、100 ms 显示延迟、选择与聚焦。打开期间保持列表原顺序，标题/状态更新和窗口消失不会任意改变选择。
 - `SwitcherPanelController` 使用非激活 NSPanel、NSVisualEffectView 与原生图标；跟随系统深浅色、减少动态效果设置，按鼠标所在屏幕定位。选中行自动滚入可视区。
 - `PreferencesWindowController` 管理权限入口、暂停、可选菜单栏图标和 SMAppService 登录项。关闭设置不退出后台进程，再次打开应用可回到设置。
@@ -17,7 +17,7 @@
 
 仅需要辅助功能授权，不需要屏幕录制；不使用 AppleScript、截图、网络服务或私有窗口操作接口。窗口标题和 MRU 只驻留内存，诊断输出不包含标题。开发预览使用内置样本数据。
 
-如果 AltTab 正在运行，Kaleido 保持待命，避免两个进程同时响应同一快捷键。AltTab 退出后自动启用。不会修改 AltTab 偏好、登录项或授权。
+快捷键方案保存在 Kaleido 自身偏好中。标准方案在 AltTab 运行时保持待命；共存方案使用 Control + Option + K / J，两者可同时工作。`--coexist` 可选中并保存共存方案。不会修改 AltTab 偏好、登录项或授权。
 
 全屏远程桌面/虚拟机的默认例外与基线一致。没有窗口的应用不创建占位项。支持标准窗口与对话框；不将非活动标准标签页单列为窗口。
 
@@ -50,3 +50,5 @@ build/Kaleido.app/Contents/MacOS/Kaleido --diagnose
 ```
 
 预览 PNG 是 AppKit 视图的离屏绘制，用于尺寸与文字排版检查，不包含实际桌面毛玻璃取样。真实透明效果通过正常浮层人工检查。
+
+`IntegrationCheck` 是显式启用的 Debug 测试入口。它通过 CGEvent 发送真实全局按键，独立的 `FixtureAccessibility` actor 在后台查询测试窗口，避免阻塞主线程事件 tap。窗口管理动作限定在 `dev.waynexia.Kaleido.WindowFixture`；所有窗口范围只检查列表并取消。报告不含真实窗口标题，Release 不包含此入口。运行方法见验证记录。
