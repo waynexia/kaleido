@@ -37,7 +37,7 @@ final class SwitcherCoordinator {
         repository.onActionFailure = { NSSound.beep() }
         shortcuts.onCommand = { [weak self] in self?.handle($0) }
         shortcuts.onTapDisabled = { [weak self] in self?.dismiss(commit: false) }
-        shortcuts.mayBegin = { [weak self] in self?.canBegin() ?? false }
+        shortcuts.mayBegin = { [weak self] in self?.canBegin(currentApplicationOnly: $0) ?? false }
         panel.onChoose = { [weak self] id in
             self?.selection.select(id: id)
             self?.dismiss(commit: true)
@@ -57,9 +57,11 @@ final class SwitcherCoordinator {
 
     func pause() { shortcuts.stop(); dismiss(commit: false) }
 
-    private func canBegin() -> Bool {
+    private func canBegin(currentApplicationOnly: Bool) -> Bool {
         guard !windows.isEmpty else { return false }
-        let bundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        let front = NSWorkspace.shared.frontmostApplication
+        if currentApplicationOnly, !windows.contains(where: { $0.processID == front?.processIdentifier }) { return false }
+        let bundle = front?.bundleIdentifier ?? ""
         let remoteApps = ["com.microsoft.rdc.macos", "com.teamviewer.TeamViewer", "org.virtualbox.app.VirtualBoxVM",
                           "com.parallels.", "com.citrix.XenAppViewer", "com.citrix.receiver.icaviewer.mac",
                           "com.nicesoftware.dcvviewer", "com.vmware.fusion", "com.apple.ScreenSharing", "com.utmapp.UTM"]

@@ -15,7 +15,7 @@ final class GlobalShortcuts {
     private var releaseWatchdog: Timer?
     private var missingModifiersSince: Date?
     var onCommand: ((ShortcutCommand) -> Void)?
-    var mayBegin: (() -> Bool)?
+    var mayBegin: ((Bool) -> Bool)?
     var onTapDisabled: (() -> Void)?
     var isRunning: Bool { tap != nil }
     #if DEBUG
@@ -49,7 +49,7 @@ final class GlobalShortcuts {
         if let tap { CFMachPortInvalidate(tap) }
         tap = nil
         source = nil
-        router.reset()
+        router.reset(clearCapturedKeys: true)
     }
 
     func resetSession() {
@@ -93,7 +93,9 @@ final class GlobalShortcuts {
 
     fileprivate func receive(_ type: CGEventType, event: CGEvent) -> Bool {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            router.reset()
+            router.reset(clearCapturedKeys: true)
+            releaseWatchdog?.invalidate()
+            releaseWatchdog = nil
             onTapDisabled?()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
@@ -108,9 +110,9 @@ final class GlobalShortcuts {
                 resetSession()
                 onCommand?(.commit)
             }
-            if router.hold == nil, mayBegin?() == false { return false }
             result = router.keyDown(code, modifiers: modifiers,
-                                    isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
+                                    isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+                                    mayBegin: { [weak self] in self?.mayBegin?($0) ?? false })
         case .keyUp: result = router.keyUp(code, modifiers: modifiers)
         case .flagsChanged: result = router.modifiersChanged(modifiers)
         default: return false

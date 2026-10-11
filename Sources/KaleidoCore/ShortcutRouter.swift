@@ -38,7 +38,12 @@ public struct ShortcutRouter {
 
     public init(profile: ShortcutProfile = .standard) { self.profile = profile }
 
-    public mutating func reset() { hold = nil; cycleKey = nil; shiftAlreadyMoved = false }
+    public mutating func reset(clearCapturedKeys: Bool = false) {
+        hold = nil
+        cycleKey = nil
+        shiftAlreadyMoved = false
+        if clearCapturedKeys { captured.removeAll() }
+    }
 
     public mutating func modifiersChanged(_ modifiers: KeyModifiers) -> ShortcutResult {
         defer { previousModifiers = modifiers }
@@ -64,14 +69,20 @@ public struct ShortcutRouter {
         return ShortcutResult(consumed)
     }
 
-    public mutating func keyDown(_ code: UInt16, modifiers: KeyModifiers, isRepeat: Bool = false) -> ShortcutResult {
+    public mutating func keyDown(_ code: UInt16, modifiers: KeyModifiers, isRepeat: Bool = false,
+                                 mayBegin: (Bool) -> Bool = { _ in true }) -> ShortcutResult {
+        // A fresh down supersedes any key-up missed while the tap was disabled.
+        if !isRepeat { captured.remove(code) }
         previousModifiers = modifiers
         let backwards = modifiers.contains(.shift)
         if hold == nil {
+            // A held key must not reopen a cancelled/committed session or leak its
+            // repeat events to an application that never received the initial down.
+            if isRepeat { return ShortcutResult(captured.contains(code)) }
             let base = modifiers.subtracting(.shift)
             let all = code == profile.allWindows.keyCode && base == profile.allWindows.modifiers
             let current = code == profile.applicationWindows.keyCode && base == profile.applicationWindows.modifiers
-            guard all || current else { return ShortcutResult() }
+            guard all || current, mayBegin(current) else { return ShortcutResult() }
             hold = all ? profile.allWindows.modifiers : profile.applicationWindows.modifiers
             cycleKey = code
             captured.insert(code)

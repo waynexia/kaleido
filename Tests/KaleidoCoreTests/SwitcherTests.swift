@@ -146,4 +146,51 @@ final class SwitcherTests: XCTestCase {
         XCTAssertNil(router.hold)
         XCTAssertFalse(router.keyDown(12, modifiers: .command).consume)
     }
+
+    func testOnlyMatchingFreshChordsQueryAvailabilityAndUnavailableScopePassesThrough() {
+        var router = ShortcutRouter()
+        var scopes: [Bool] = []
+        let unavailable: (Bool) -> Bool = { scopes.append($0); return false }
+        XCTAssertFalse(router.keyDown(0, modifiers: [], mayBegin: unavailable).consume)
+        XCTAssertFalse(router.keyDown(48, modifiers: [.control, .command], mayBegin: unavailable).consume)
+        XCTAssertFalse(router.keyDown(48, modifiers: .control, isRepeat: true, mayBegin: unavailable).consume)
+        XCTAssertTrue(scopes.isEmpty)
+        XCTAssertFalse(router.keyDown(50, modifiers: .option, mayBegin: unavailable).consume)
+        XCTAssertEqual(scopes, [true])
+        XCTAssertNil(router.hold)
+        XCTAssertFalse(router.keyUp(50).consume)
+    }
+
+    func testCancelledSessionSwallowsHeldRepeatsWithoutReopening() {
+        var router = ShortcutRouter()
+        _ = router.keyDown(48, modifiers: .control)
+        _ = router.keyDown(53, modifiers: .control)
+        XCTAssertEqual(router.keyDown(48, modifiers: .control, isRepeat: true), ShortcutResult(true))
+        XCTAssertEqual(router.keyDown(53, modifiers: .control, isRepeat: true), ShortcutResult(true))
+        XCTAssertNil(router.hold)
+        XCTAssertTrue(router.keyUp(48).consume)
+        XCTAssertEqual(router.keyDown(48, modifiers: .control).command, .begin(currentApplicationOnly: false, backwards: false))
+    }
+
+    func testCommitSwallowsActionRepeatUntilKeyUp() {
+        var router = ShortcutRouter()
+        _ = router.keyDown(48, modifiers: .control)
+        _ = router.keyDown(13, modifiers: .control)
+        _ = router.modifiersChanged([])
+        XCTAssertEqual(router.keyDown(13, modifiers: [], isRepeat: true), ShortcutResult(true))
+        XCTAssertTrue(router.keyUp(13).consume)
+        XCTAssertFalse(router.keyDown(13, modifiers: []).consume)
+        XCTAssertFalse(router.keyUp(13).consume)
+    }
+
+    func testFreshKeyDownAndTapRestartDiscardStaleKeyUpCapture() {
+        var router = ShortcutRouter()
+        _ = router.keyDown(48, modifiers: .control)
+        router.reset()
+        XCTAssertFalse(router.keyDown(48, modifiers: []).consume)
+        XCTAssertFalse(router.keyUp(48).consume)
+        _ = router.keyDown(48, modifiers: .control)
+        router.reset(clearCapturedKeys: true)
+        XCTAssertFalse(router.keyUp(48).consume)
+    }
 }
