@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        UserDefaults.standard.register(defaults: ["showMenuBarIcon": true])
         if CommandLine.arguments.contains("--coexist") {
             profile = .coexistence
             UserDefaults.standard.set(profile.rawValue, forKey: "shortcutProfile")
@@ -119,14 +120,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.on.rectangle", accessibilityDescription: "Kaleido")
-        item.button?.toolTip = "Kaleido"
-        let menu = NSMenu()
-        let settings = NSMenuItem(title: "设置…", action: #selector(showPreferences), keyEquivalent: "")
-        settings.target = self
-        menu.addItem(settings)
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "退出 Kaleido", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        item.menu = menu
+        item.button?.image?.isTemplate = true
+        item.button?.toolTip = "Kaleido — 设置"
+        item.button?.setAccessibilityLabel("打开 Kaleido 设置")
+        item.button?.target = self
+        item.button?.action = #selector(showPreferences)
         statusItem = item
     }
 }

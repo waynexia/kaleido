@@ -11,7 +11,7 @@
 - `GlobalShortcuts` 在主 RunLoop 上用 CGEventTap 截获输入，调用纯状态机。事件回调不执行 AX 枚举或网络操作。会话期间以 25 ms 定时核对修饰键状态，防止遗漏松键通知后继续吞掉输入。事件 tap 被系统禁用时取消当前会话并重新启用。
 - `SwitcherCoordinator` 管理缓存、100 ms 显示延迟、选择与聚焦。打开期间保持列表原顺序，标题/状态更新和窗口消失不会任意改变选择。
 - `SwitcherPanelController` 使用非激活 NSPanel、NSVisualEffectView 与原生图标；跟随系统深浅色、减少动态效果设置，按鼠标所在屏幕定位。选中行自动滚入可视区。
-- `PreferencesWindowController` 管理权限入口、暂停、可选菜单栏图标和 SMAppService 登录项。关闭设置不退出后台进程，再次打开应用可回到设置。
+- `PreferencesWindowController` 管理权限入口、暂停、菜单栏图标和 SMAppService 登录项。菜单栏图标默认显示，按钮直接调用设置入口；可在设置中隐藏，显式保存的可见性偏好优先于默认值。关闭设置不退出后台进程，再次打开应用可回到设置。
 
 ## 权限和进程
 
