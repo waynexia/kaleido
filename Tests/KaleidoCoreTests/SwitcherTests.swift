@@ -72,11 +72,12 @@ final class SwitcherTests: XCTestCase {
     func testReverseNavigationAndShiftAlone() {
         var router = ShortcutRouter()
         _ = router.keyDown(48, modifiers: .control)
-        _ = router.modifiersChanged([.control, .shift])
+        XCTAssertEqual(router.modifiersChanged([.control, .shift]).command, .move(-1))
+        XCTAssertNil(router.keyDown(48, modifiers: [.control, .shift]).command)
         XCTAssertEqual(router.keyDown(48, modifiers: [.control, .shift]).command, .move(-1))
         XCTAssertNil(router.modifiersChanged(.control).command)
-        _ = router.modifiersChanged([.control, .shift])
-        XCTAssertEqual(router.modifiersChanged(.control).command, .move(-1))
+        XCTAssertEqual(router.modifiersChanged([.control, .shift]).command, .move(-1))
+        XCTAssertNil(router.modifiersChanged(.control).command)
     }
 
     func testSecondaryShortcutModifiersAndDestructiveRepeat() {
@@ -97,5 +98,24 @@ final class SwitcherTests: XCTestCase {
         let tiny = PanelGeometry(screen: CGSize(width: 240, height: 200), titleWidth: 200, count: 1)
         XCTAssertLessThanOrEqual(tiny.width, 240)
         XCTAssertLessThanOrEqual(tiny.height, 200)
+    }
+
+    func testInitialReverseChordAndReleaseOfUnrelatedModifier() {
+        var router = ShortcutRouter()
+        XCTAssertEqual(router.keyDown(48, modifiers: [.control, .shift]).command,
+                       .begin(currentApplicationOnly: false, backwards: true))
+        XCTAssertNil(router.modifiersChanged(.control).command)
+        XCTAssertEqual(router.modifiersChanged([]).command, .commit)
+    }
+
+    func testWindowActionsAndArrowNavigation() {
+        var router = ShortcutRouter()
+        _ = router.keyDown(48, modifiers: .control)
+        for (key, action) in [(UInt16(13), WindowAction.close), (46, .minimize), (3, .fullscreen), (12, .quit), (4, .hide)] {
+            XCTAssertEqual(router.keyDown(key, modifiers: .control).command, .act(action))
+            XCTAssertTrue(router.keyUp(key).consume)
+        }
+        XCTAssertEqual(router.keyDown(126, modifiers: .control).command, .move(-1))
+        XCTAssertEqual(router.keyDown(125, modifiers: .control).command, .move(1))
     }
 }

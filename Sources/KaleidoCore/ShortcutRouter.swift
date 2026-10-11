@@ -32,11 +32,11 @@ public struct ShortcutRouter {
     public private(set) var hold: KeyModifiers?
     private var captured = Set<UInt16>()
     private var previousModifiers: KeyModifiers = []
-    private var shiftWithoutTab = false
+    private var shiftAlreadyMoved = false
 
     public init() {}
 
-    public mutating func reset() { hold = nil; shiftWithoutTab = false }
+    public mutating func reset() { hold = nil; shiftAlreadyMoved = false }
 
     public mutating func modifiersChanged(_ modifiers: KeyModifiers) -> ShortcutResult {
         defer { previousModifiers = modifiers }
@@ -45,11 +45,11 @@ public struct ShortcutRouter {
             reset()
             return ShortcutResult(false, .commit)
         }
-        if modifiers.contains(.shift), !previousModifiers.contains(.shift) { shiftWithoutTab = true }
-        if !modifiers.contains(.shift), previousModifiers.contains(.shift), shiftWithoutTab {
-            shiftWithoutTab = false
+        if modifiers.contains(.shift), !previousModifiers.contains(.shift) {
+            shiftAlreadyMoved = true
             return ShortcutResult(false, .move(-1))
         }
+        if !modifiers.contains(.shift) { shiftAlreadyMoved = false }
         return ShortcutResult()
     }
 
@@ -72,8 +72,9 @@ public struct ShortcutRouter {
         let command: ShortcutCommand?
         switch code {
         case 48, 50:
-            shiftWithoutTab = false
-            command = .move(backwards ? -1 : 1)
+            // Shift itself moves once; the following Tab belongs to the same reverse chord.
+            command = backwards && shiftAlreadyMoved ? nil : .move(backwards ? -1 : 1)
+            shiftAlreadyMoved = false
         case 123, 126: command = .move(-1)
         case 124, 125: command = .move(1)
         case 49, 36: command = .commit; reset()
