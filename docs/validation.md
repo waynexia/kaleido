@@ -4,7 +4,7 @@
 
 ## 自动检查
 
-- `make check`：14 项 XCTest、Debug 构建、Info.plist、codesign 与应用包自检通过。
+- `make check`：14 项 XCTest、Debug 构建、Info.plist、codesign、应用包自检及签名连续性检查通过。
 - `swift build -c release`：优化构建通过；全局测试驱动由 `#if DEBUG` 隔离，不进入 Release。
 - 浅色、深色、40 行长标题预览已导出检查。产物位于被 Git 忽略的 `build/previews/`。
 - `bash -n scripts/*.sh` 与 `git diff --check` 通过。
@@ -53,7 +53,13 @@
 
 ## 复现
 
-先退出正在运行的 Kaleido 和旧 Window Fixture，保留 AltTab。构建后确认当前 `build/Kaleido.app` 的辅助功能授权有效，再运行：
+先退出正在运行的 Kaleido 和旧 Window Fixture，保留 AltTab。驱动会检查 AltTab 能否通过 Control + Tab 唤出，因此需要保持该参照快捷键配置。使用 Debug 构建：
+
+```sh
+CONFIGURATION=debug make check
+```
+
+确认当前 `build/Kaleido.app` 的辅助功能授权有效；如为检查状态而打开过应用，开始测试前先退出，避免 `open --args` 复用已有进程而未启动驱动。随后运行：
 
 ```sh
 ./scripts/fixture.sh
@@ -68,7 +74,9 @@ open build/Kaleido.app --args --coexist --integration-check "$PWD/build/integrat
 
 ## 仍需扩展覆盖
 
+- 菜单栏状态按钮的实际点击，以及隐藏后重新打开设置的完整往返操作；当前确认了按钮绑定与已选中的可见性设置，尚未完成实点验收。
 - 任意多桌面往返、多显示器间移动鼠标后的面板定位，以及各第三方应用的 AX 差异；本次全屏测试不等同于覆盖全部 Space 情况。
 - 鼠标点击行、悬停按钮和减少动态效果的完整交互回归；本轮实机动作主要通过键盘验收。
 - 登录项注册与实际重新登录、Developer ID 签名与公证。
+- 远程桌面/虚拟机各客户端的全屏快捷键让行规则。
 - 不宣称逐像素一致：系统材质、滚动条显隐、图标来源和不同系统版本的渲染可能有细微差异。
