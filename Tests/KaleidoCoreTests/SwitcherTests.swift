@@ -90,12 +90,12 @@ final class SwitcherTests: XCTestCase {
         XCTAssertEqual(router.keyDown(49, modifiers: .option).command, .commit)
     }
 
-    func testGeometryClampsLongTitlesAndOverflowToScreen() {
-        let geometry = PanelGeometry(screen: CGSize(width: 1440, height: 900), titleWidth: 5000, count: 100)
-        XCTAssertEqual(geometry.width, 864)
-        XCTAssertEqual(geometry.height, 720)
+    func testGeometryMatchesMeasuredTitlePanelAndClampsOverflow() {
+        let geometry = PanelGeometry(screen: CGSize(width: 1512, height: 982), count: 100)
+        XCTAssertEqual(geometry.width, 820)
+        XCTAssertEqual(geometry.height, 786)
         XCTAssertGreaterThan(geometry.contentHeight, geometry.height)
-        let tiny = PanelGeometry(screen: CGSize(width: 240, height: 200), titleWidth: 200, count: 1)
+        let tiny = PanelGeometry(screen: CGSize(width: 240, height: 200), count: 1)
         XCTAssertLessThanOrEqual(tiny.width, 240)
         XCTAssertLessThanOrEqual(tiny.height, 200)
     }

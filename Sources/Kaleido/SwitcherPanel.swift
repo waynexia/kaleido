@@ -21,7 +21,7 @@ private final class WindowRow: NSView {
     private let controls = NSStackView()
     private var tracking: NSTrackingArea?
     var selected = false { didSet { needsDisplay = true; setAccessibilitySelected(selected) } }
-    private var hovered = false { didSet { controls.isHidden = !hovered; status.isHidden = hovered } }
+    private var hovered = false { didSet { controls.isHidden = !hovered; status.isHidden = hovered; needsLayout = true } }
 
     init(window: WindowDescriptor, image: NSImage?, width: CGFloat) {
         self.descriptor = window
@@ -85,10 +85,12 @@ private final class WindowRow: NSView {
     override func layout() {
         super.layout()
         icon.frame = NSRect(x: 7, y: 7, width: 26, height: 26)
-        titleLabel.frame = NSRect(x: 40, y: 10, width: max(0, bounds.width - 122), height: 20)
+        let trailing = hovered ? CGFloat(78) : max(7, status.fittingSize.width + 7)
+        titleLabel.frame = NSRect(x: 35, y: 10, width: max(0, bounds.width - 35 - trailing), height: 20)
         status.frame = NSRect(x: bounds.width - 78, y: 11, width: 68, height: 19)
         controls.frame = NSRect(x: bounds.width - 73, y: 10, width: 62, height: 20)
-        badge.frame = NSRect(x: 23, y: 4, width: 18, height: 13)
+        let badgeWidth = max(13, min(32, badge.fittingSize.width))
+        badge.frame = NSRect(x: 28 - badgeWidth / 2, y: 22, width: badgeWidth, height: 13)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -170,21 +172,20 @@ final class SwitcherPanelController {
 
     func render(_ selection: SwitcherSelection, icons: [Int32: NSImage]) {
         guard let screen = screen ?? NSScreen.main else { return }
-        let font = NSFont.systemFont(ofSize: 14)
-        let maxTitle = selection.windows.map { ($0.displayTitle as NSString).size(withAttributes: [.font: font]).width }.max() ?? 200
-        let geometry = PanelGeometry(screen: screen.visibleFrame.size, titleWidth: maxTitle, count: selection.windows.count)
+        let geometry = PanelGeometry(screen: screen.frame.size, count: selection.windows.count)
         let frame = NSRect(x: screen.visibleFrame.midX - geometry.width / 2,
                            y: screen.visibleFrame.midY - geometry.height / 2,
                            width: geometry.width, height: geometry.height)
         panel.setFrame(frame, display: true)
         background.frame = NSRect(origin: .zero, size: frame.size)
         scroll.frame = background.bounds.insetBy(dx: PanelGeometry.padding, dy: PanelGeometry.padding)
-        let width = scroll.contentSize.width
-        list.frame = NSRect(x: 0, y: 0, width: width, height: geometry.contentHeight)
+        scroll.contentView.setFrameSize(scroll.bounds.size)
+        let width = scroll.contentSize.width - PanelGeometry.rowGap * 2
+        list.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: geometry.contentHeight)
         rows.forEach { $0.removeFromSuperview() }
         rows = selection.windows.enumerated().map { index, window in
             let row = WindowRow(window: window, image: icons[window.processID], width: width)
-            row.frame.origin.y = CGFloat(index) * (PanelGeometry.rowHeight + PanelGeometry.rowGap)
+            row.frame.origin = NSPoint(x: PanelGeometry.rowGap, y: PanelGeometry.rowGap + CGFloat(index) * (PanelGeometry.rowHeight + PanelGeometry.rowGap))
             row.onChoose = { [weak self] in self?.onChoose?($0) }
             row.onAction = { [weak self] in self?.onAction?($0, $1) }
             list.addSubview(row)
