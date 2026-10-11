@@ -1,6 +1,10 @@
 # 验证记录
 
-2026-10-11，Apple Silicon，macOS 15.0，Xcode 16.0 / Swift 6.0。AltTab 7.21.1 全程保留运行及原配置；Kaleido 使用 Control + Option + K / J 共存方案。
+2026-10-11，Apple Silicon，macOS 15.0，Xcode 16.0 / Swift 6.0。下述早期并排及签名更新验收期间，AltTab 7.21.1 保留运行及原配置，Kaleido 使用 Control + Option + K / J 共存方案。当前单独运行状态见下一节。
+
+## 切回标准快捷键
+
+2026-10-11：按用户要求退出 AltTab，将 Kaleido 保存的快捷键方案从 `coexistence` 改为 `standard`。进程检查确认 AltTab 已退出；应用设置显示 Control + Tab，状态为“已就绪”。经 LaunchServices 重启后，设置与“已就绪”状态保持，无需重新授权。代码中的新安装默认值已是标准方案，无需修改源代码或重新构建。历史共存检查结果保留，不作为标准方案此次实机回归的结论。
 
 ## 自动检查
 
@@ -51,7 +55,9 @@
 
 实机复验修复了修饰键查询短暂滞后、AX 超时被误当空列表，以及全屏动画返回短暂不完整列表的问题。关闭通知和应用退出不经过列表缺失宽限期。
 
-## 复现
+## 复现早期共存验收
+
+以下驱动依赖 AltTab 和共存方案，仅用于明确需要的并排比较。当前日常使用仅运行 Kaleido，不应为常规检查自动启动 AltTab 或覆盖标准方案。
 
 先退出正在运行的 Kaleido 和旧 Window Fixture，保留 AltTab。驱动会检查 AltTab 能否通过 Control + Tab 唤出，因此需要保持该参照快捷键配置。使用 Debug 构建：
 
