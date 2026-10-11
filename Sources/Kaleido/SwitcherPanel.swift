@@ -11,7 +11,7 @@ private final class FlippedView: NSView {
 }
 
 private final class WindowRow: NSView {
-    let descriptor: WindowDescriptor
+    private(set) var descriptor: WindowDescriptor
     var onChoose: ((String) -> Void)?
     var onAction: ((WindowAction, String) -> Void)?
     private let icon = NSImageView()
@@ -20,7 +20,15 @@ private final class WindowRow: NSView {
     private let badge = NSTextField(labelWithString: "")
     private let controls = NSStackView()
     private var tracking: NSTrackingArea?
-    var selected = false { didSet { needsDisplay = true; setAccessibilitySelected(selected) } }
+    private var sourceImage: NSImage?
+    private var configured = false
+    var selected = false {
+        didSet {
+            guard selected != oldValue else { return }
+            needsDisplay = true
+            setAccessibilitySelected(selected)
+        }
+    }
     private var hovered = false { didSet { controls.isHidden = !hovered; status.isHidden = hovered; needsLayout = true } }
 
     init(window: WindowDescriptor, image: NSImage?, width: CGFloat) {
@@ -28,34 +36,19 @@ private final class WindowRow: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: PanelGeometry.rowHeight))
         wantsLayer = true
         layer?.cornerRadius = 10
-        icon.image = image ?? NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        titleLabel.stringValue = window.displayTitle
         titleLabel.font = .systemFont(ofSize: 14)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.cell?.truncatesLastVisibleLine = true
         titleLabel.textColor = .labelColor
         titleLabel.maximumNumberOfLines = 1
-        let states = [(window.isMinimized, "minus.circle"), (window.isHidden, "eye.slash"),
-                      (window.isFullscreen, "arrow.up.left.and.arrow.down.right")].filter(\.0)
-        let statusText = NSMutableAttributedString()
-        for (_, symbol) in states {
-            let attachment = NSTextAttachment()
-            attachment.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
-            statusText.append(NSAttributedString(attachment: attachment))
-            statusText.append(NSAttributedString(string: " "))
-        }
-        status.attributedStringValue = statusText
         status.alignment = .right
-        badge.stringValue = window.badge ?? ""
         badge.font = .systemFont(ofSize: 9, weight: .semibold)
         badge.textColor = .white
         badge.alignment = .center
         badge.wantsLayer = true
         badge.layer?.backgroundColor = NSColor.systemRed.cgColor
         badge.layer?.cornerRadius = 6
-        badge.isHidden = window.badge == nil
         controls.orientation = .horizontal
         controls.spacing = 6
         controls.isHidden = true
@@ -72,12 +65,36 @@ private final class WindowRow: NSView {
             controls.addArrangedSubview(button)
         }
         [icon, titleLabel, status, controls, badge].forEach(addSubview)
-        toolTip = "\(window.application) — \(window.displayTitle)"
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
+        update(window: window, image: image)
+    }
+
+    func update(window: WindowDescriptor, image: NSImage?) {
+        guard !configured || descriptor != window || sourceImage !== image else { return }
+        configured = true
+        descriptor = window
+        sourceImage = image
+        icon.image = image ?? NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
+        titleLabel.stringValue = window.displayTitle
+        let states = [(window.isMinimized, "minus.circle"), (window.isHidden, "eye.slash"),
+                      (window.isFullscreen, "arrow.up.left.and.arrow.down.right")].filter(\.0)
+        let statusText = NSMutableAttributedString()
+        for (_, symbol) in states {
+            let attachment = NSTextAttachment()
+            attachment.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+            statusText.append(NSAttributedString(attachment: attachment))
+            statusText.append(NSAttributedString(string: " "))
+        }
+        status.attributedStringValue = statusText
+        badge.stringValue = window.badge ?? ""
+        badge.isHidden = window.badge?.isEmpty != false
+        toolTip = "\(window.application) — \(window.displayTitle)"
         let stateNames = [(window.isMinimized, "已最小化"), (window.isHidden, "已隐藏"), (window.isFullscreen, "全屏")]
             .filter(\.0).map(\.1).joined(separator: "，")
         setAccessibilityLabel("\(window.application)，\(window.displayTitle)\(stateNames.isEmpty ? "" : "，" + stateNames)")
+        needsLayout = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -108,6 +125,9 @@ private final class WindowRow: NSView {
         if let tracking { removeTrackingArea(tracking) }
         tracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
         if let tracking { addTrackingArea(tracking) }
+        if let window {
+            hovered = visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        }
     }
 
     override func mouseEntered(with event: NSEvent) { hovered = true }
@@ -165,38 +185,45 @@ final class SwitcherPanelController {
         fadeGeneration += 1
         panel.alphaValue = 1
         screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
-        render(selection, icons: icons)
+        render(selection, icons: icons, revealSelection: true)
         panel.orderFrontRegardless()
         if preview { NSApp.activate(ignoringOtherApps: true); panel.makeKey() }
     }
 
-    func render(_ selection: SwitcherSelection, icons: [Int32: NSImage]) {
+    func render(_ selection: SwitcherSelection, icons: [Int32: NSImage], revealSelection: Bool = false) {
         guard let screen = screen ?? NSScreen.main else { return }
         let geometry = PanelGeometry(screen: screen.frame.size, count: selection.windows.count)
         let frame = NSRect(x: screen.visibleFrame.midX - geometry.width / 2,
                            y: screen.visibleFrame.midY - geometry.height / 2,
                            width: geometry.width, height: geometry.height)
-        panel.setFrame(frame, display: true)
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
         background.frame = NSRect(origin: .zero, size: frame.size)
         scroll.frame = background.bounds.insetBy(dx: PanelGeometry.padding, dy: PanelGeometry.padding)
         scroll.contentView.setFrameSize(scroll.bounds.size)
         let width = scroll.contentSize.width - PanelGeometry.rowGap * 2
         list.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: geometry.contentHeight)
-        rows.forEach { $0.removeFromSuperview() }
+        let previousSelection = rows.first { $0.selected }?.descriptor.id
+        var reusable = Dictionary(uniqueKeysWithValues: rows.map { ($0.descriptor.id, $0) })
         rows = selection.windows.enumerated().map { index, window in
-            let row = WindowRow(window: window, image: icons[window.processID], width: width)
-            row.frame.origin = NSPoint(x: PanelGeometry.rowGap, y: PanelGeometry.rowGap + CGFloat(index) * (PanelGeometry.rowHeight + PanelGeometry.rowGap))
+            let row = reusable.removeValue(forKey: window.id)
+                ?? WindowRow(window: window, image: icons[window.processID], width: width)
+            row.update(window: window, image: icons[window.processID])
+            row.frame = NSRect(x: PanelGeometry.rowGap, y: PanelGeometry.rowGap + CGFloat(index) * (PanelGeometry.rowHeight + PanelGeometry.rowGap),
+                               width: width, height: PanelGeometry.rowHeight)
             row.onChoose = { [weak self] in self?.onChoose?($0) }
             row.onAction = { [weak self] in self?.onAction?($0, $1) }
-            list.addSubview(row)
+            if row.superview == nil { list.addSubview(row) }
             return row
         }
-        select(selection.selectedIndex)
+        reusable.values.forEach { $0.removeFromSuperview() }
+        // Reorder accessibility children without detaching reused views or losing hover state.
+        list.setAccessibilityChildren(rows)
+        select(selection.selectedIndex, reveal: revealSelection || previousSelection != selection.selected?.id)
     }
 
-    func select(_ index: Int?) {
+    func select(_ index: Int?, reveal: Bool = true) {
         for (offset, row) in rows.enumerated() { row.selected = offset == index }
-        if let index, rows.indices.contains(index) {
+        if reveal, let index, rows.indices.contains(index) {
             list.scrollToVisible(rows[index].frame)
             NSAccessibility.post(element: rows[index], notification: .focusedUIElementChanged)
         }

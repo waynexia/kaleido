@@ -28,9 +28,12 @@ final class SwitcherCoordinator {
             self.windows = windows
             self.icons = icons
             if self.active {
+                let previousWindows = self.selection.windows
                 self.selection.reconcile(windows, scope: self.scope)
                 if self.selection.windows.isEmpty { self.dismiss(commit: false) }
-                else if self.panel.panel.isVisible { self.panel.render(self.selection, icons: icons) }
+                else if self.panel.panel.isVisible, self.selection.windows != previousWindows {
+                    self.panel.render(self.selection, icons: icons)
+                }
             }
             self.onAvailabilityChange?()
         }
