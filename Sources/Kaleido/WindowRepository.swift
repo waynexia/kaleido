@@ -6,7 +6,8 @@ private func windowObserverCallback(_ observer: AXObserver, _ element: AXUIEleme
                                     _ notification: CFString, _ context: UnsafeMutableRawPointer?) {
     guard let context else { return }
     let repository = Unmanaged<WindowRepository>.fromOpaque(context).takeUnretainedValue()
-    repository.requestRefresh()
+    if notification as String == kAXUIElementDestroyedNotification { repository.windowDestroyed(element) }
+    else { repository.requestRefresh() }
 }
 
 /// AX queries run on a serial worker, never in the global event tap or AppKit drawing path.
@@ -24,6 +25,7 @@ final class WindowRepository {
 
     private let queue = DispatchQueue(label: "dev.waynexia.Kaleido.windows", qos: .userInitiated)
     private var records: [String: Record] = [:]
+    private var missingSince: [String: Date] = [:]
     private var observations: [pid_t: Observation] = [:]
     private var history = WindowHistory()
     private var lastFocusedID: String?
@@ -66,10 +68,21 @@ final class WindowRepository {
         }
     }
 
+    fileprivate func windowDestroyed(_ element: AXUIElement) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            for (id, record) in self.records where CFEqual(record.element, element) {
+                self.records.removeValue(forKey: id)
+                self.missingSince.removeValue(forKey: id)
+            }
+            self.requestRefresh()
+        }
+    }
+
     private func refresh() {
         guard Accessibility.isTrusted else { return }
         let apps = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            $0.activationPolicy != .prohibited && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
                 && $0.bundleIdentifier != "com.McAfee.McAfeeSafariHost"
         }
         let serverWindows = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
@@ -86,9 +99,20 @@ final class WindowRepository {
             AXUIElementSetMessagingTimeout(root, 0.2)
             ensureObserver(pid: pid, root: root)
             icons[pid] = app.icon
-            for element in Accessibility.elements(root, kAXWindowsAttribute) {
+            // A busy AppKit animation can exceed the AX timeout. A failed read is not
+            // an empty window list: keep the last snapshot until the app responds again.
+            guard let elements = Accessibility.value(root, kAXWindowsAttribute) as? [AXUIElement] else {
+                discovered += records.values.filter { $0.app.processIdentifier == pid }
+                continue
+            }
+            for element in elements {
+                let previous = records.values.first { $0.app.processIdentifier == pid && CFEqual($0.element, element) }
                 let role = Accessibility.string(element, kAXRoleAttribute)
                 let subrole = Accessibility.string(element, kAXSubroleAttribute)
+                if role == nil || subrole == nil {
+                    if let previous { discovered.append(previous) }
+                    continue
+                }
                 guard role == kAXWindowRole,
                       subrole == kAXStandardWindowSubrole || subrole == kAXDialogSubrole else { continue }
                 let minimized = Accessibility.bool(element, kAXMinimizedAttribute)
@@ -111,6 +135,23 @@ final class WindowRepository {
                 observeWindow(element, id: id, pid: pid)
             }
         }
+        // Space transitions may successfully return a temporarily incomplete AXWindows
+        // array. Confirm disappearance after a short grace period; destruction events and
+        // terminated applications bypass the grace period so real closes remain prompt.
+        let discoveredIDs = Set(discovered.map { $0.descriptor.id })
+        let livePIDs = Set(apps.map(\.processIdentifier))
+        let now = Date()
+        var retryMissing = false
+        for (id, record) in records where !discoveredIDs.contains(id) && livePIDs.contains(record.app.processIdentifier) {
+            let since = missingSince[id] ?? now
+            missingSince[id] = since
+            if now.timeIntervalSince(since) < 1.5 {
+                discovered.append(record)
+                retryMissing = true
+            }
+        }
+        missingSince = missingSince.filter { !discoveredIDs.contains($0.key) && records[$0.key].map { livePIDs.contains($0.app.processIdentifier) } == true }
+        if retryMissing { queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.requestRefresh() } }
         discovered.sort {
             let lhs = $0.windowID.flatMap { order[$0] } ?? Int.max
             let rhs = $1.windowID.flatMap { order[$0] } ?? Int.max
