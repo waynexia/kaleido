@@ -66,6 +66,13 @@ enum Accessibility {
         return AXUIElementPerformAction(element, action as CFString) == .success
     }
 
+    static func toggle(_ element: AXUIElement, _ attribute: String,
+                       read: (AXUIElement, String) -> CFTypeRef? = value,
+                       write: (AXUIElement, String, CFTypeRef) -> Bool = set) -> Bool {
+        guard let current = read(element, attribute) as? NSNumber else { return false }
+        return write(element, attribute, current.boolValue ? kCFBooleanFalse : kCFBooleanTrue)
+    }
+
     // Isolate the optional WindowServer identity bridge. AX has no public window-ID API.
     // A missing symbol falls back to CFEqual identity; it is never required for window actions.
     private typealias WindowIDFunction = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError

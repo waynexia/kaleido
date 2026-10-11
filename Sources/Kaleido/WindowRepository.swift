@@ -280,11 +280,9 @@ final class WindowRepository {
                     success = Accessibility.perform(close, kAXPressAction)
                 }
             case .minimize:
-                let minimized = Accessibility.bool(record.element, kAXMinimizedAttribute)
-                success = Accessibility.set(record.element, kAXMinimizedAttribute, minimized ? kCFBooleanFalse : kCFBooleanTrue)
+                success = Accessibility.toggle(record.element, kAXMinimizedAttribute)
             case .fullscreen:
-                let fullscreen = Accessibility.bool(record.element, "AXFullScreen")
-                success = Accessibility.set(record.element, "AXFullScreen", fullscreen ? kCFBooleanFalse : kCFBooleanTrue)
+                success = Accessibility.toggle(record.element, "AXFullScreen")
             case .quit: success = record.app.terminate()
             case .hide: success = record.app.isHidden ? record.app.unhide() : record.app.hide()
             }

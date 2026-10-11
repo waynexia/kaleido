@@ -8,7 +8,7 @@
 
 ## 自动检查
 
-- 最新 `make check`：29 项 XCTest（18 项切换行为、4 项权限生命周期、7 项原生 AX/UI 边界）、Debug 构建、Info.plist、codesign、应用包自检及签名连续性检查通过。
+- 最新 `make check`：31 项 XCTest（18 项切换行为、4 项权限生命周期、9 项原生 AX/UI 边界）、Debug 构建、Info.plist、codesign、应用包自检及签名连续性检查通过。
 - `swift build -c release`：优化构建通过；全局测试驱动由 `#if DEBUG` 隔离，不进入 Release。
 - 浅色、深色、40 行长标题预览已导出检查。产物位于被 Git 忽略的 `build/previews/`。
 - `bash -n scripts/*.sh` 与 `git diff --check` 通过。
@@ -24,6 +24,8 @@
 - 构建：改为临时包签名、自检通过后再安装，校验默认本地身份与旧包一致；运行中拒绝替换，禁止 ad-hoc 覆盖证书构建。`make check`（27 项测试）通过；分别用不存在的签名身份、显式 ad-hoc 和正在运行的 Kaleido 验证拒绝路径，原可执行文件 SHA-256 保持一致、签名仍有效。Shell 语法检查通过。
 - 经 LaunchServices 打开 UI 修复后的正常构建，实际设置界面仍显示 Control + Tab、菜单栏图标开启及“已就绪”；未重新授权。此时 AltTab 保持退出。随后退出应用继续后续审查。
 - 设置页：等待批准的登录项保持勾选并显示明确状态；返回应用时刷新。预览的菜单开关和 `--coexist` 不再写真实偏好，登录项按钮禁用；普通重复实例在应用命令行偏好前退出。`make check` 通过 29 项测试及签名检查。新增 AppKit 测试验证等待/批准/移除状态与预览点击不写偏好；实际导出带 `--coexist` 的预览后确认保存方案仍为 standard。浅色已就绪、深色缺权预览已检查。没有注册真实登录项，实际重新登录仍待验收。
+- 窗口动作：最小化/全屏状态读取失败时不再按 false 继续写入。新增 2 项测试覆盖失败或错误类型时零写入、已知状态取反与写入失败传递；`make check` 的 31 项测试、签名检查、Release 构建通过。标准方案再次运行全部 13 项实机检查通过，报告为 `build/review-standard-final-actions.json`。
+- 全部修复后退出测试模式，经 LaunchServices 不带测试参数正常重启。应用设置再次显示 Control + Tab、“已就绪”和可见菜单栏图标；保存方案仍为 standard，菜单栏偏好键仍未写入（沿用默认可见）。原签名及授权保持有效，Window Fixture 和 AltTab 均未运行。
 
 ## 标准方案实机回归（2026-10-11）
 

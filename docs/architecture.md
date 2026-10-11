@@ -23,6 +23,8 @@
 
 `Accessibility` 在每次属性读取、写入、动作和 ID 桥接前，对实际 AX 对象设置 200 ms 消息超时。只设置应用根对象不会覆盖返回的窗口或子控件（[Apple API 语义](https://developer.apple.com/documentation/applicationservices/1459345-axuielementsetmessagingtimeout)）。批量属性中的 AXError / CFNull 作为缺失值处理，整批失败不视为空列表；显式空标题和 false 状态仍正常更新。原生边界测试通过注入批量响应验证，不访问真实窗口或修改权限。
 
+最小化和全屏切换先读取实际布尔状态，读取失败或类型不符时不写入属性，通过现有提示音报告失败；不把未知状态当作 false 后继续执行。
+
 聚焦后的第二次 raise 在 80 ms 后尝试；新聚焦请求或窗口动作会使旧请求失效，目标已隐藏/退出/移除或用户切换到其他应用时也不再执行。繁忙队列使重试超过 250 ms 时直接放弃，用单调时钟限制重试有效期。
 
 ## 权限和进程

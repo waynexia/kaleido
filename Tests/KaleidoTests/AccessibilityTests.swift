@@ -40,4 +40,29 @@ final class AccessibilityTests: XCTestCase {
         XCTAssertEqual(values?[kAXTitleAttribute] as? String, "")
         XCTAssertEqual((values?[kAXMinimizedAttribute] as? NSNumber)?.boolValue, false)
     }
+
+    func testUnknownWindowStateNeverTriggersAToggleWrite() {
+        let element = AXUIElementCreateApplication(getpid())
+        let results: [CFTypeRef?] = [nil, "invalid" as CFString]
+        for result in results {
+            XCTAssertFalse(Accessibility.toggle(element, kAXMinimizedAttribute, read: { _, _ in result }, write: { _, _, _ in
+                XCTFail("Cannot invert an unknown state")
+                return true
+            }))
+        }
+    }
+
+    func testToggleInvertsKnownStatesAndPropagatesWriteFailure() {
+        let element = AXUIElementCreateApplication(getpid())
+        for current in [false, true] {
+            var writes: [Bool] = []
+            let success = Accessibility.toggle(element, "AXFullScreen", read: { _, _ in NSNumber(value: current) }, write: { _, attribute, value in
+                XCTAssertEqual(attribute, "AXFullScreen")
+                writes.append((value as! NSNumber).boolValue)
+                return false
+            })
+            XCTAssertFalse(success)
+            XCTAssertEqual(writes, [!current])
+        }
+    }
 }
