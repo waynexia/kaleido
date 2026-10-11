@@ -17,6 +17,8 @@
 - `AppDelegate` 管理单实例、权限与快捷键冲突状态、菜单栏按钮和设置入口。菜单栏图标默认显示，按钮直接打开设置；显式保存的可见性偏好优先于默认值。关闭设置不退出后台进程，再次打开应用可回到设置。
 - `PreferencesWindowController` 提供权限入口、快捷键方案、暂停和菜单栏可见性开关，并通过 SMAppService 管理登录项。快捷键与菜单栏偏好持久保存，暂停只在当前进程内生效。
 
+登录项的 `requiresApproval` 显示为已勾选、等待系统批准，用户仍可取消注册；重新激活设置时刷新系统状态。重复启动在应用命令行偏好前退出，避免新进程改变运行中实例尚未采用的方案。
+
 快捷键状态机只在新的按键匹配启动组合时查询目标范围是否可用；普通输入、额外修饰键和自动重复不会触发前台应用查询。同应用范围为空时原样让行。取消或提交后，已经捕获的按键继续吞掉自动重复及配对的 key-up，直到松键；停止或重建 event tap 时清除旧捕获状态，避免影响后续输入。
 
 `Accessibility` 在每次属性读取、写入、动作和 ID 桥接前，对实际 AX 对象设置 200 ms 消息超时。只设置应用根对象不会覆盖返回的窗口或子控件（[Apple API 语义](https://developer.apple.com/documentation/applicationservices/1459345-axuielementsetmessagingtimeout)）。批量属性中的 AXError / CFNull 作为缺失值处理，整批失败不视为空列表；显式空标题和 false 状态仍正常更新。原生边界测试通过注入批量响应验证，不访问真实窗口或修改权限。
@@ -65,6 +67,6 @@ build/Kaleido.app/Contents/MacOS/Kaleido --diagnose
 
 预览 PNG 是 AppKit 视图的离屏绘制，用于尺寸与文字排版检查，不包含实际桌面毛玻璃取样。真实透明效果通过正常浮层人工检查。
 
-`--preview --settings-preview` 显示固定的已就绪设置样本，加 `--missing-permission` 显示缺少权限样本。可配合 `--light` / `--dark` 和 `--export-preview <路径>` 导出；这些样本不启动权限监控或快捷键监听，也不修改系统授权。缺权到授权的监控生命周期由注入状态的 XCTest 验证。
+`--preview --settings-preview` 显示固定的已就绪设置样本，加 `--missing-permission` 显示缺少权限样本。可配合 `--light` / `--dark` 和 `--export-preview <路径>` 导出；这些样本不启动权限监控或快捷键监听，也不修改系统授权。预览中登录项控制禁用，菜单栏开关仅改变样本，不写偏好；`--coexist` 在预览时不保存方案。缺权到授权的监控生命周期由注入状态的 XCTest 验证。
 
 `IntegrationCheck` 是显式启用的 Debug 测试入口。它通过 CGEvent 发送真实全局按键，独立的 `FixtureAccessibility` actor 在后台查询测试窗口，避免阻塞主线程事件 tap。窗口管理动作限定在 `dev.waynexia.Kaleido.WindowFixture`；所有窗口范围只检查列表并取消。报告不含真实窗口标题，Release 不包含此入口。运行方法见验证记录。

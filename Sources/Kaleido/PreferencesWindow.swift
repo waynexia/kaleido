@@ -3,6 +3,7 @@ import ServiceManagement
 import KaleidoCore
 
 final class PreferencesWindowController: NSWindowController {
+    private let isPreview: Bool
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let permissionButton = NSButton(title: "打开辅助功能设置…", target: nil, action: nil)
     private let loginToggle = NSButton(checkboxWithTitle: "登录时启动", target: nil, action: nil)
@@ -14,7 +15,8 @@ final class PreferencesWindowController: NSWindowController {
     var onPauseChange: ((Bool) -> Void)?
     var onProfileChange: ((ShortcutProfile) -> Void)?
 
-    init(profile: ShortcutProfile) {
+    init(profile: ShortcutProfile, preview: Bool = false) {
+        isPreview = preview
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 492),
                               styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Kaleido"
@@ -58,11 +60,12 @@ final class PreferencesWindowController: NSWindowController {
         shortcutLabel.font = .systemFont(ofSize: 13)
         shortcutLabel.widthAnchor.constraint(equalToConstant: 424).isActive = true
         stack.addArrangedSubview(shortcutLabel)
-        loginToggle.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        updateLoginStatus(preview ? .notRegistered : SMAppService.mainApp.status)
+        loginToggle.isEnabled = !preview
         loginToggle.target = self
         loginToggle.action = #selector(toggleLogin)
         stack.addArrangedSubview(loginToggle)
-        menuToggle.state = UserDefaults.standard.bool(forKey: "showMenuBarIcon") ? .on : .off
+        menuToggle.state = preview || UserDefaults.standard.bool(forKey: "showMenuBarIcon") ? .on : .off
         menuToggle.target = self
         menuToggle.action = #selector(toggleMenu)
         stack.addArrangedSubview(menuToggle)
@@ -106,6 +109,7 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     func updateStatus(trusted: Bool, listening: Bool, conflict: Bool, paused: Bool, profile: ShortcutProfile) {
+        if !isPreview { updateLoginStatus(SMAppService.mainApp.status) }
         permissionButton.isHidden = trusted
         pauseToggle.state = paused ? .on : .off
         if !trusted {
@@ -124,7 +128,7 @@ final class PreferencesWindowController: NSWindowController {
     @objc private func openPermissions() { Accessibility.openSettings() }
     @objc private func toggleMenu() {
         let visible = menuToggle.state == .on
-        UserDefaults.standard.set(visible, forKey: "showMenuBarIcon")
+        if !isPreview { UserDefaults.standard.set(visible, forKey: "showMenuBarIcon") }
         onMenuVisibilityChange?(visible)
     }
     @objc private func togglePause() { onPauseChange?(pauseToggle.state == .on) }
@@ -140,6 +144,7 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     @objc private func toggleLogin() {
+        guard !isPreview else { return }
         do {
             if loginToggle.state == .on { try SMAppService.mainApp.register() }
             else { try SMAppService.mainApp.unregister() }
@@ -147,9 +152,15 @@ final class PreferencesWindowController: NSWindowController {
         } catch {
             let alert = NSAlert()
             alert.messageText = "无法更改登录启动"
-            alert.informativeText = "请将 Kaleido 放入“应用程序”文件夹后重试。\n\(error.localizedDescription)"
+            alert.informativeText = "请检查系统设置中的登录项配置后重试。\n\(error.localizedDescription)"
             alert.runModal()
         }
-        loginToggle.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        updateLoginStatus(SMAppService.mainApp.status)
+    }
+
+    func updateLoginStatus(_ status: SMAppService.Status) {
+        // Registration awaiting user approval still exists and must remain cancellable.
+        loginToggle.state = status == .enabled || status == .requiresApproval ? .on : .off
+        loginToggle.title = status == .requiresApproval ? "登录时启动（等待系统批准）" : "登录时启动"
     }
 }

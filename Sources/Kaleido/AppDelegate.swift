@@ -22,8 +22,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // Reject duplicate instances before applying any command-line preference changes.
+        if !isPreview {
+            let otherInstances = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "dev.waynexia.Kaleido")
+                .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+            if let existing = otherInstances.first {
+                existing.activate(options: [.activateIgnoringOtherApps])
+                NSApp.terminate(nil)
+                return
+            }
+        }
         UserDefaults.standard.register(defaults: ["showMenuBarIcon": true])
-        if CommandLine.arguments.contains("--coexist") {
+        if !isPreview, CommandLine.arguments.contains("--coexist") {
             profile = .coexistence
             UserDefaults.standard.set(profile.rawValue, forKey: "shortcutProfile")
         }
@@ -32,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isPreview {
             if isSettingsPreview {
                 let trusted = !CommandLine.arguments.contains("--missing-permission")
-                settings = PreferencesWindowController(profile: .standard)
+                settings = PreferencesWindowController(profile: .standard, preview: true)
                 settings?.updateStatus(trusted: trusted, listening: trusted, conflict: false, paused: false, profile: .standard)
                 if CommandLine.arguments.contains("--light") { settings?.window?.appearance = NSAppearance(named: .aqua) }
                 if CommandLine.arguments.contains("--dark") { settings?.window?.appearance = NSAppearance(named: .darkAqua) }
@@ -51,13 +61,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSApp.terminate(nil)
                 }
             }
-            return
-        }
-        let otherInstances = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "dev.waynexia.Kaleido")
-            .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
-        if let existing = otherInstances.first {
-            existing.activate(options: [.activateIgnoringOtherApps])
-            NSApp.terminate(nil)
             return
         }
         updateMenuVisibility(UserDefaults.standard.bool(forKey: "showMenuBarIcon"))
@@ -109,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showPreferences() {
+        if isPreview { settings?.present(); return }
         if settings == nil {
             settings = PreferencesWindowController(profile: profile)
             settings?.onProfileChange = { [weak self] profile in
