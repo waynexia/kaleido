@@ -4,7 +4,7 @@
 
 ## 开发
 
-需要 Xcode 16 或更新版本（Swift 6 工具链）。
+需要 Xcode 16 或更新版本（Swift 6 工具链），以及按[代码签名说明](docs/code-signing.md)创建的固定本地签名身份。
 
 ```sh
 make check    # 单元测试、构建、签名与应用包检查
@@ -12,7 +12,7 @@ make run      # 构建并打开应用
 make preview  # 无需系统权限的界面预览
 ```
 
-构建产物位于 `build/Kaleido.app`。脚本优先使用 `/Applications/Xcode.app`，不修改全局 `xcode-select`。默认使用本地 ad-hoc 签名；发行构建可传入 `CODE_SIGN_IDENTITY`。
+构建产物位于 `build/Kaleido.app`。脚本优先使用 `/Applications/Xcode.app`，不修改全局 `xcode-select`。默认使用登录钥匙串中的 `Kaleido Local Development` 证书签名，身份缺失时构建失败，不会自动退回 ad-hoc。发行构建可传入 `CODE_SIGN_IDENTITY`。
 
 ## 使用
 
@@ -32,8 +32,9 @@ make preview  # 无需系统权限的界面预览
 
 - [功能基线](docs/behavior-baseline.md)
 - [架构与开发约定](docs/architecture.md)
+- [代码签名与更新授权](docs/code-signing.md)
 - [验证记录](docs/validation.md)
 
 窗口列表只在内存中处理，不保存窗口标题、屏幕图像或应用使用历史。
 
-开发构建更新后，ad-hoc 签名变化可能使旧辅助功能授权失效。此时在系统设置中移除旧 Kaleido 条目、重新添加当前应用并重启。设置窗口中的运行状态以应用自身权限为准；从终端直接运行 `--diagnose` 检查的是命令进程，不能替代已启动应用的权限状态。
+保持同一签名证书、bundle ID 与安装路径，正常重建无需逐次重新授权。首次从 ad-hoc 迁移到证书签名时需要更新一次辅助功能授权，详见签名说明。设置窗口中的运行状态以应用自身权限为准；从终端直接运行 `--diagnose` 检查的是命令进程，不能替代已启动应用的权限状态。

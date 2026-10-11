@@ -9,5 +9,5 @@ bundle=build/Kaleido.app
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$binary_dir/Kaleido" "$bundle/Contents/MacOS/Kaleido"
 cp Resources/Info.plist "$bundle/Contents/Info.plist"
-codesign --force --sign "${CODE_SIGN_IDENTITY:--}" --identifier dev.waynexia.Kaleido "$bundle"
+./scripts/sign-app.sh "$bundle"
 printf 'Built %s/%s\n' "$PWD" "$bundle"

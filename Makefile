@@ -9,6 +9,7 @@ preview: build
 	open -n build/Kaleido.app --args --preview
 check: test build
 	./scripts/check-bundle.sh
+	./scripts/check-signing.sh
 clean:
 	swift package clean
 	rm -rf build
