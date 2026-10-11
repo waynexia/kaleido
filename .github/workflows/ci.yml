@@ -1,0 +1,9 @@
+name: macOS
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test and build application
+        run: make check
