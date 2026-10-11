@@ -316,7 +316,6 @@ final class IntegrationCheck {
 private actor FixtureAccessibility {
     private func root(_ pid: pid_t) -> AXUIElement {
         let root = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(root, 0.2)
         return root
     }
 
@@ -345,7 +344,7 @@ private actor FixtureAccessibility {
         guard let window = window(pid, name) else { return false }
         Accessibility.set(window, kAXMinimizedAttribute, kCFBooleanFalse)
         Accessibility.set(window, kAXMainAttribute, kCFBooleanTrue)
-        return AXUIElementPerformAction(window, kAXRaiseAction as CFString) == .success
+        return Accessibility.perform(window, kAXRaiseAction)
     }
 }
 #endif

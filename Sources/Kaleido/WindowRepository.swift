@@ -25,6 +25,7 @@ final class WindowRepository {
 
     private let queue = DispatchQueue(label: "dev.waynexia.Kaleido.windows", qos: .userInitiated)
     private var records: [String: Record] = [:]
+    private var iconCache: [Int32: NSImage] = [:]
     private var missingSince: [String: Date] = [:]
     private var observations: [pid_t: Observation] = [:]
     private var history = WindowHistory()
@@ -50,7 +51,7 @@ final class WindowRepository {
         queue.async { [weak self] in
             guard let self else { return }
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
-            timer.schedule(deadline: .now(), repeating: 3)
+            timer.schedule(deadline: .now(), repeating: 3, leeway: .milliseconds(200))
             timer.setEventHandler { [weak self] in self?.refresh() }
             self.timer = timer
             timer.resume()
@@ -90,43 +91,47 @@ final class WindowRepository {
             return (id, index)
         }, uniquingKeysWith: { first, _ in first })
         let badges = dockBadges()
+        let previousByPID = Dictionary(grouping: records.values, by: { $0.app.processIdentifier })
         var discovered: [Record] = []
         var icons: [Int32: NSImage] = [:]
         for app in apps {
             let pid = app.processIdentifier
             let root = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(root, 0.2)
-            ensureObserver(pid: pid, root: root)
-            icons[pid] = app.icon
+            let previousWindows = previousByPID[pid] ?? []
+            if iconCache[pid] == nil { iconCache[pid] = app.icon }
+            icons[pid] = iconCache[pid]
             // A busy AppKit animation can exceed the AX timeout. A failed read is not
             // an empty window list: keep the last snapshot until the app responds again.
             guard let elements = Accessibility.value(root, kAXWindowsAttribute) as? [AXUIElement] else {
-                discovered += records.values.filter { $0.app.processIdentifier == pid }
+                discovered += previousWindows
                 continue
             }
+            ensureObserver(pid: pid, root: root)
             for element in elements {
-                let previous = records.values.first { $0.app.processIdentifier == pid && CFEqual($0.element, element) }
-                let role = Accessibility.string(element, kAXRoleAttribute)
-                let subrole = Accessibility.string(element, kAXSubroleAttribute)
-                if role == nil || subrole == nil {
+                let number = Accessibility.windowID(element)
+                let stableID = number.map { "\(pid):\($0)" }
+                let previous = stableID.flatMap { records[$0] }
+                    ?? previousWindows.first { CFEqual($0.element, element) }
+                guard let attributes = Accessibility.values(element, [kAXRoleAttribute, kAXSubroleAttribute,
+                                                                       kAXTitleAttribute, kAXMinimizedAttribute, "AXFullScreen"]),
+                      let role = attributes[kAXRoleAttribute] as? String,
+                      let subrole = attributes[kAXSubroleAttribute] as? String else {
                     if let previous { discovered.append(previous) }
                     continue
                 }
                 guard role == kAXWindowRole,
                       subrole == kAXStandardWindowSubrole || subrole == kAXDialogSubrole else { continue }
-                let minimized = Accessibility.bool(element, kAXMinimizedAttribute)
-                let fullscreen = Accessibility.bool(element, "AXFullScreen")
-                let number = Accessibility.windowID(element)
+                let minimized = (attributes[kAXMinimizedAttribute] as? NSNumber)?.boolValue ?? previous?.descriptor.isMinimized ?? false
+                let fullscreen = (attributes["AXFullScreen"] as? NSNumber)?.boolValue ?? previous?.descriptor.isFullscreen ?? false
                 // Standard inactive tabs are not WindowServer windows. Off-Space windows are
                 // included by optionAll; hidden/minimized windows remain eligible regardless.
                 if let number, order[number] == nil, !app.isHidden, !minimized, !fullscreen { continue }
-                let id = number.map { "\(pid):\($0)" }
-                    ?? records.first { $0.value.app.processIdentifier == pid && CFEqual($0.value.element, element) }?.key
+                let id = stableID ?? previous?.descriptor.id
                     ?? "\(pid):\(UUID().uuidString)"
                 let descriptor = WindowDescriptor(
                     id: id, processID: pid, application: app.localizedName ?? "Application",
                     bundleIdentifier: app.bundleIdentifier ?? "",
-                    title: Accessibility.string(element, kAXTitleAttribute) ?? "",
+                    title: attributes[kAXTitleAttribute] as? String ?? previous?.descriptor.title ?? "",
                     isMinimized: minimized, isHidden: app.isHidden, isFullscreen: fullscreen,
                     badge: badges[app.localizedName ?? ""]
                 )
@@ -139,6 +144,7 @@ final class WindowRepository {
         // terminated applications bypass the grace period so real closes remain prompt.
         let discoveredIDs = Set(discovered.map { $0.descriptor.id })
         let livePIDs = Set(apps.map(\.processIdentifier))
+        iconCache = iconCache.filter { livePIDs.contains($0.key) }
         let now = Date()
         var retryMissing = false
         for (id, record) in records where !discoveredIDs.contains(id) && livePIDs.contains(record.app.processIdentifier) {
@@ -156,7 +162,9 @@ final class WindowRepository {
             let rhs = $1.windowID.flatMap { order[$0] } ?? Int.max
             return lhs == rhs ? $0.descriptor.id < $1.descriptor.id : lhs < rhs
         }
-        records = Dictionary(discovered.map { ($0.descriptor.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        discovered = discovered.filter { seen.insert($0.descriptor.id).inserted }
+        records = Dictionary(uniqueKeysWithValues: discovered.map { ($0.descriptor.id, $0) })
         if let front = NSWorkspace.shared.frontmostApplication,
            let focused = Accessibility.element(AXUIElementCreateApplication(front.processIdentifier), kAXFocusedWindowAttribute),
            let match = discovered.first(where: { $0.app.processIdentifier == front.processIdentifier && CFEqual($0.element, focused) }),
@@ -215,12 +223,12 @@ final class WindowRepository {
     private func dockBadges() -> [String: String] {
         guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return [:] }
         let root = AXUIElementCreateApplication(dock.processIdentifier)
-        AXUIElementSetMessagingTimeout(root, 0.1)
         var result: [String: String] = [:]
         for list in Accessibility.elements(root, kAXChildrenAttribute) {
             for item in Accessibility.elements(list, kAXChildrenAttribute) {
-                guard let title = Accessibility.string(item, kAXTitleAttribute),
-                      let badge = Accessibility.string(item, "AXStatusLabel"), !badge.isEmpty else { continue }
+                guard let attributes = Accessibility.values(item, [kAXTitleAttribute, "AXStatusLabel"]),
+                      let title = attributes[kAXTitleAttribute] as? String,
+                      let badge = attributes["AXStatusLabel"] as? String, !badge.isEmpty else { continue }
                 result[title] = badge
             }
         }
@@ -235,11 +243,11 @@ final class WindowRepository {
                 Accessibility.set(record.element, kAXMinimizedAttribute, kCFBooleanFalse)
             }
             Accessibility.set(record.element, kAXMainAttribute, kCFBooleanTrue)
-            let raised = AXUIElementPerformAction(record.element, kAXRaiseAction as CFString) == .success
+            let raised = Accessibility.perform(record.element, kAXRaiseAction)
             let activated = record.app.activate(options: [.activateIgnoringOtherApps])
             // A second raise after activation prevents another window of the same app winning.
             self.queue.asyncAfter(deadline: .now() + 0.08) {
-                AXUIElementPerformAction(record.element, kAXRaiseAction as CFString)
+                Accessibility.perform(record.element, kAXRaiseAction)
                 self.requestRefresh()
             }
             if raised || activated {
@@ -256,7 +264,7 @@ final class WindowRepository {
             switch action {
             case .close:
                 if let close = Accessibility.element(record.element, kAXCloseButtonAttribute) {
-                    success = AXUIElementPerformAction(close, kAXPressAction as CFString) == .success
+                    success = Accessibility.perform(close, kAXPressAction)
                 }
             case .minimize:
                 let minimized = Accessibility.bool(record.element, kAXMinimizedAttribute)

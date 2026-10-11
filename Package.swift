@@ -12,6 +12,7 @@ let package = Package(
         .target(name: "KaleidoCore"),
         .executableTarget(name: "Kaleido", dependencies: ["KaleidoCore"]),
         .testTarget(name: "KaleidoCoreTests", dependencies: ["KaleidoCore"]),
+        .testTarget(name: "KaleidoTests", dependencies: ["Kaleido"]),
     ],
     swiftLanguageModes: [.v5]
 )
