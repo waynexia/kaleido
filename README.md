@@ -6,6 +6,8 @@
 
 从 [GitHub Releases](https://github.com/waynexia/kaleido/releases) 下载 `Kaleido-v0.1.0-macos-universal.zip`，包含 Apple Silicon 和 Intel 两种架构。解压后将 `Kaleido.app` 放到固定位置（例如 `/Applications`），再打开并授权辅助功能。更新已有安装时，先退出应用，并沿用原安装位置。
 
+v0.1.0 之后的版本仅支持 Apple Silicon（arm64），附件命名为 `Kaleido-v<版本号>-macos-arm64.zip`。已发布的 v0.1.0 通用包继续保留。
+
 v0.1.0 使用固定的自签名证书，**没有 Developer ID 签名或 Apple 公证**，首次打开可能被 Gatekeeper 拦截。签名完整性检查通过不代表 Apple 发行信任。下载页附有 `SHA256SUMS.txt`；安装前可在两个下载文件所在目录运行 `shasum -a 256 -c SHA256SUMS.txt`。平台验证范围见 [v0.1.0 发布说明](docs/releases/v0.1.0.md)。
 
 ## 开发

@@ -1,6 +1,7 @@
 # Repository conventions
 
 - Build a native macOS application with Swift and AppKit; keep deterministic behavior in `KaleidoCore`.
+- Releases after v0.1.0 support Apple Silicon only. Build and package arm64, use `macos-arm64` asset names, and verify the executable contains only arm64. Preserve the published v0.1.0 universal assets and historical validation records.
 - Read [README.md](README.md) for commands, [behavior-baseline.md](docs/behavior-baseline.md) for scope, [architecture.md](docs/architecture.md) for implementation boundaries, [code-signing.md](docs/code-signing.md) for signing, and [validation.md](docs/validation.md) for completed and pending checks. Distinguish observed reference settings, implemented behavior, and verified behavior.
 - Product UI contains window information, controls, and actionable runtime status only. Keep task descriptions and implementation goals in documentation.
 - Do not collect or persist real window titles, usage history, screenshots, or full machine preference exports.
