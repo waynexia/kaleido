@@ -6,4 +6,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test and build application
+        env:
+          # Disposable CI builds do not have the persistent local signing key.
+          CODE_SIGN_IDENTITY: '-'
         run: make check

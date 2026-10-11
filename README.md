@@ -2,6 +2,12 @@
 
 原生 macOS 窗口切换器。Swift + AppKit，macOS 13 及以上，无第三方运行时依赖。
 
+## 下载
+
+从 [GitHub Releases](https://github.com/waynexia/kaleido/releases) 下载 `Kaleido-v0.1.0-macos-universal.zip`，包含 Apple Silicon 和 Intel 两种架构。解压后将 `Kaleido.app` 放到固定位置（例如 `/Applications`），再打开并授权辅助功能。更新已有安装时，先退出应用，并沿用原安装位置。
+
+v0.1.0 使用固定的自签名证书，**没有 Developer ID 签名或 Apple 公证**，首次打开可能被 Gatekeeper 拦截。签名完整性检查通过不代表 Apple 发行信任。下载页附有 `SHA256SUMS.txt`；安装前可在两个下载文件所在目录运行 `shasum -a 256 -c SHA256SUMS.txt`。平台验证范围见 [v0.1.0 发布说明](docs/releases/v0.1.0.md)。
+
 ## 开发
 
 需要 Xcode 16 或更新版本（Swift 6 工具链），以及按[代码签名说明](docs/code-signing.md)创建的固定本地签名身份。
@@ -39,6 +45,7 @@ make preview  # 无需辅助功能权限的界面预览
 - [架构与开发约定](docs/architecture.md)
 - [代码签名与更新授权](docs/code-signing.md)
 - [验证记录](docs/validation.md)
+- [发布与打包](docs/releasing.md)
 
 窗口列表只在内存中处理，不保存窗口标题、屏幕图像或应用使用历史。
 

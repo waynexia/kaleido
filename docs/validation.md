@@ -13,6 +13,14 @@
 - 浅色、深色、40 行长标题预览已导出检查。产物位于被 Git 忽略的 `build/previews/`。
 - `bash -n scripts/*.sh` 与 `git diff --check` 通过。
 
+## v0.1.0 发布验收（2026-10-11）
+
+- 发布前重新运行 `make check`，31 项测试、应用包及固定证书签名连续性检查通过；`CONFIGURATION=release make build` 通过。本机只存在既有 `Kaleido Local Development` 身份，未创建或导出签名凭据。
+- `swift build -c release --arch arm64 --arch x86_64 --scratch-path .build/universal` 构建通用二进制。两种架构的 Mach-O 最低系统版本均为 13.0，符号检查未发现 Debug 的 `IntegrationCheck`。
+- 使用同一固定证书在独立目录签署通用包，证书绑定要求与日常应用一致。ZIP 解压后的全架构严格签名检查、arm64 应用包自检和 SHA-256 校验通过。归档仅包含应用包及其 macOS 归档元数据，不含证书导出、私钥、测试报告或真实窗口数据。
+- 本机固定路径的 Release 构建经 LaunchServices 重新打开，设置显示“已就绪”、Control + Tab、菜单栏图标开启、登录启动关闭；保存方案仍为 standard。没有修改授权或偏好，AltTab 保持退出。本次未重新执行全局按键驱动。
+- 发布产物未使用 Developer ID，未经过 Apple 公证；全新机器的 Gatekeeper/安装流程、Intel 实机及 macOS 13/14 实机运行仍待验证。[发布说明](releases/v0.1.0.md)明确保留这些限制。
+
 ## 实现审查回归（2026-10-11）
 
 - 键盘输入：修复取消/提交后按键重复重新打开面板或泄漏输入、遗失 key-up 后吞掉下次普通 key-up、空同应用范围拦截快捷键的问题。可用性查询仅用于匹配的首次启动按键，避免普通打字查询 NSWorkspace。
